@@ -334,11 +334,11 @@ with tab_engagement:
     ds["engagement_pct"] = (ds["engagement_rate"] * 100).round(1)
     ds["display_label"] = ds["display"].str.replace("_", " ").str.title()
 
-    display_choice = st.pills(
+    display_choice = st.multiselect(
         "Displays to compare",
         options=ds["display_label"].tolist(),
         default=ds["display_label"].tolist(),
-        help="Click to toggle. At least one must be selected.",
+        help="Uncheck a display to hide it from the charts. At least one must be selected.",
     )
     if not display_choice:
         st.warning("Pick at least one display.")
