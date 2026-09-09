@@ -20,10 +20,19 @@ import warnings
 from dataclasses import dataclass, field
 from typing import Iterable
 
-import cv2
 import numpy as np
 import pandas as pd
 from shapely.geometry import Point, Polygon
+
+# cv2 is only needed for video frame iteration + drawing helpers.
+# We make it lazy so that pure-analytics callers (e.g. the Streamlit dashboard
+# reading cached JSON) don't fail if opencv wheels are unavailable.
+try:
+    import cv2  # type: ignore
+    _HAS_CV2 = True
+except ImportError:
+    cv2 = None  # type: ignore
+    _HAS_CV2 = False
 
 warnings.filterwarnings("ignore")
 
@@ -68,6 +77,8 @@ ZONE_COLORS = {
 
 def iter_video_frames(source) -> Iterable[tuple[int, np.ndarray]]:
     """Yield (frame_index, BGR ndarray) pairs from a video path or frame dir."""
+    if not _HAS_CV2:
+        raise RuntimeError("opencv-python-headless is required to iterate video frames.")
     if isinstance(source, str) and os.path.isdir(source):
         files = sorted(glob.glob(os.path.join(source, "*.jpg")))
         for i, f in enumerate(files):
