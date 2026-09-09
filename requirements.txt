@@ -1,9 +1,17 @@
+# Pinned to Python 3.11 (see runtime.txt) for stable CV wheels.
+# IMPORTANT: opencv-python-headless must be installed AFTER ultralytics,
+# otherwise ultralytics' dependency on opencv-python (with Qt/X11 libs) wins
+# and Streamlit Cloud's container can't import cv2.
+
 ultralytics>=8.3.0
-opencv-python-headless>=4.8
+lap>=0.4
+
+# Install headless opencv last so it overrides ultralytics' opencv-python
+opencv-python-headless>=4.8,<5.0
+
 shapely>=2.0
 pandas>=2.0
-numpy>=1.24
+numpy>=1.24,<3.0
 matplotlib>=3.7
-streamlit>=1.30
-lap>=0.4
+streamlit>=1.30,<2.0
 scipy>=1.10
