@@ -6,8 +6,9 @@ Generates the bundled sample assets for the demo:
 
   - assets/mall_sample.mp4            : original frames -> mp4 at ASSUMED_FPS
   - assets/mall_sample_annotated.mp4  : same video with bboxes, track IDs, zone overlays
-  - assets/mall_sample_results.json   : pre-computed analytics (consumed by the UI)
+  - assets/mall_sample_results.json   : cached analytics (consumed by the UI)
   - assets/best_frame.jpg             : a single nicely-annotated frame for the landing page
+  - assets/sample_frames/             : 20 evenly-spaced frames for the Live Demo scrubber
 
 Usage:
   python scripts/build_sample_assets.py \\
@@ -244,6 +245,23 @@ def main():
 
     # Best static frame
     write_best_frame(result, frames_dir, str(out_dir / "best_frame.jpg"))
+
+    # Sample frames for the Live Demo scrubber (20 frames spread across the video)
+    sample_dir = out_dir / "sample_frames"
+    sample_dir.mkdir(exist_ok=True)
+    import shutil as _sh
+    for f in sample_dir.glob("*.jpg"):
+        f.unlink()
+    n_samples = 20
+    idxs = np.linspace(0, result.n_frames_processed - 1, n_samples, dtype=int)
+    sample_files = sorted([f for f in os.listdir(frames_dir) if f.endswith(".jpg")])[
+        : result.n_frames_processed
+    ]
+    for idx in idxs:
+        src = os.path.join(frames_dir, sample_files[int(idx)])
+        dst = sample_dir / f"frame_{int(idx):04d}.jpg"
+        _sh.copy(src, dst)
+    print(f"[samples] saved {n_samples} frames to {sample_dir}/")
 
     print("\nAll assets generated in", out_dir)
     for p in sorted(out_dir.iterdir()):

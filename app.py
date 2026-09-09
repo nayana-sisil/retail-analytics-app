@@ -5,7 +5,7 @@ A public-facing demo of a computer-vision pipeline that turns retail video
 into shopper journey + display engagement analytics.
 
 Use the sidebar to navigate:
-  - Results Dashboard  (instant, pre-computed)
+  - Results Dashboard  (instant, cached analytics)
   - Live Demo          (annotated video + per-frame chart)
   - Methodology        (assumptions, pipeline, limitations)
 """
@@ -110,11 +110,11 @@ in the repository.
     st.markdown(
         """
 1. Open the **Results Dashboard** to see the analytics on the bundled sample
-   video (loads instantly - results are pre-computed).
-2. Open the **Live Demo** to watch the annotated video with bounding boxes,
-   track IDs, and zone overlays.
-3. Open the **Methodology** page to read about assumptions, the pipeline, and
-   the limitations of this POC.
+   video. Numbers are computed at build time, so the page loads instantly.
+2. Open the **Live Demo** to scrub through the annotated video and see what
+   the detector found in each frame.
+3. Open the **Methodology** page to read about assumptions, the pipeline,
+   and the limitations of this POC.
         """
     )
 
@@ -147,7 +147,7 @@ if result is not None:
     best_frame_path = ASSETS / "best_frame.jpg"
     if best_frame_path.exists():
         st.markdown("---")
-        st.subheader("What the computer sees")
+        st.subheader("Annotated frame")
         styles.interpretation(
             "A single frame from the sample video. Each tracked person has a "
             "persistent ID. Colored polygons are the journey and display zones "

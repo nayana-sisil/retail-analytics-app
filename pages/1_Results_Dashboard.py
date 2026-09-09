@@ -1,8 +1,8 @@
 """
-Results Dashboard - pre-computed analytics for the bundled sample video.
+Results Dashboard - analytics for the bundled sample video.
 
-Loads `assets/mall_sample_results.json` (cached on first deploy) and renders
-the full set of business metrics.
+The numbers are computed at build time and shipped as JSON with the app, so
+the page loads instantly. Use the controls on each tab to slice the data.
 """
 
 import json
@@ -75,7 +75,7 @@ if result is None:
 
 
 # -----------------------------------------------------------------------------
-# Sidebar with quick context
+# Sidebar with sample context
 # -----------------------------------------------------------------------------
 with st.sidebar:
     st.markdown("## Sample context")
@@ -87,10 +87,10 @@ with st.sidebar:
     st.markdown("## Tab guide")
     st.markdown(
         """
-- **Overview** - top KPIs
-- **Journey** - footfall & transitions
-- **Engagement** - display metrics
-- **Data** - raw tables & downloads
+- **Overview** - top KPIs and zone map
+- **Journey** - footfall and transitions
+- **Engagement** - per-display metrics
+- **Data** - raw tables and downloads
         """
     )
 
@@ -100,8 +100,9 @@ with st.sidebar:
 # -----------------------------------------------------------------------------
 styles.hero(
     "Results Dashboard",
-    f"Pre-computed analytics on the {result.n_frames_processed}-frame sample video "
-    f"({result.n_frames_processed / result.fps:.0f} seconds at {result.fps} fps).",
+    f"Analytics for the {result.n_frames_processed}-frame sample video "
+    f"({result.n_frames_processed / result.fps:.0f} seconds at {result.fps} fps). "
+    f"Use the controls on each tab to slice the data.",
 )
 
 
@@ -122,8 +123,8 @@ tab_overview, tab_journey, tab_engagement, tab_data = st.tabs([
 with tab_overview:
     styles.section("Top-line numbers")
     styles.interpretation(
-        "Headline KPIs. Use these in an exec summary slide. The 'Top display' "
-        "is whichever display (A or B) has the higher average dwell time on this sample."
+        "Headline KPIs. Use these in an exec summary slide. 'Top display' "
+        "is whichever display has the higher average dwell time on this sample."
     )
 
     n_shoppers = int(result.tracks_df["track_id"].nunique()) if len(result.tracks_df) else 0
@@ -142,11 +143,12 @@ with tab_overview:
 
     st.markdown("---")
 
-    styles.section("Zone layout")
+    styles.section("Zone layout and footfall")
     styles.interpretation(
-        "Reference map of every zone the analytics are computed against. The four "
-        "horizontal bands are journey zones (entrance -> checkout). The two green/"
-        "pink rectangles are display zones A and B."
+        "Reference map of every zone the analytics are computed against. The "
+        "four horizontal bands are journey zones; the two rectangles are "
+        "displays A and B. The bar chart on the right shows unique shoppers "
+        "observed in each journey zone."
     )
 
     left, right = st.columns([1, 1.2], gap="large")
@@ -158,26 +160,44 @@ with tab_overview:
             st.info("Zone reference image not found.")
 
     with right:
-        styles.section("Footfall by zone")
-        styles.interpretation(
-            "Unique shoppers observed in each journey zone. A shopper standing in "
-            "the same zone across many frames still counts as one visitor."
+        # Toggle: bar chart or pie chart
+        chart_kind = st.radio(
+            "Chart type",
+            ["Bar", "Donut"],
+            horizontal=True,
+            label_visibility="collapsed",
         )
         footfall_df = result.footfall.reset_index()
         footfall_df.columns = ["zone", "unique_visitors"]
-        fig = px.bar(
-            footfall_df, x="zone", y="unique_visitors",
-            color="zone", color_discrete_map=ZONE_COLORS_HEX,
-            text="unique_visitors",
-        )
-        fig.update_traces(textposition="outside")
-        fig.update_layout(
-            showlegend=False, height=380,
-            plot_bgcolor="white", paper_bgcolor="white",
-            xaxis_title=None, yaxis_title="Unique shoppers",
-            yaxis=dict(gridcolor=PALETTE["grid"]),
-            margin=dict(l=10, r=10, t=20, b=10),
-        )
+        footfall_df = footfall_df[footfall_df["unique_visitors"] > 0]
+
+        if chart_kind == "Bar":
+            fig = px.bar(
+                footfall_df, x="zone", y="unique_visitors",
+                color="zone", color_discrete_map=ZONE_COLORS_HEX,
+                text="unique_visitors",
+            )
+            fig.update_traces(textposition="outside")
+            fig.update_layout(
+                showlegend=False, height=380,
+                plot_bgcolor="white", paper_bgcolor="white",
+                xaxis_title=None, yaxis_title="Unique shoppers",
+                yaxis=dict(gridcolor=PALETTE["grid"]),
+                margin=dict(l=10, r=10, t=20, b=10),
+            )
+        else:
+            fig = px.pie(
+                footfall_df, names="zone", values="unique_visitors",
+                color="zone", color_discrete_map=ZONE_COLORS_HEX,
+                hole=0.55,
+            )
+            fig.update_traces(textposition="inside", textinfo="percent+label")
+            fig.update_layout(
+                showlegend=True, height=380,
+                plot_bgcolor="white", paper_bgcolor="white",
+                margin=dict(l=10, r=10, t=20, b=10),
+                legend=dict(orientation="h", yanchor="bottom", y=-0.15),
+            )
         st.plotly_chart(fig, use_container_width=True)
 
 
@@ -185,6 +205,55 @@ with tab_overview:
 # Tab 2: Customer Journey
 # =============================================================================
 with tab_journey:
+    styles.section("Footfall by zone")
+    styles.interpretation(
+        "Unique shoppers observed in each journey zone. A shopper standing in "
+        "the same zone across many frames still counts as one visitor. "
+        "Use the filter to focus on a subset of zones."
+    )
+
+    all_zones = result.footfall.index.tolist()
+    selected_zones = st.multiselect(
+        "Zones to show",
+        options=all_zones,
+        default=all_zones,
+        help="Uncheck a zone to hide it from both the bar chart and the heatmap below.",
+    )
+    if not selected_zones:
+        st.warning("Pick at least one zone to see the charts.")
+        st.stop()
+
+    # Footfall bar (filtered)
+    ff = result.footfall.reset_index()
+    ff.columns = ["zone", "unique_visitors"]
+    ff = ff[ff["zone"].isin(selected_zones)]
+
+    c_bar, c_kpi = st.columns([3, 1])
+    with c_bar:
+        fig = px.bar(
+            ff, x="zone", y="unique_visitors",
+            color="zone", color_discrete_map=ZONE_COLORS_HEX,
+            text="unique_visitors",
+        )
+        fig.update_traces(textposition="outside")
+        fig.update_layout(
+            showlegend=False, height=300,
+            plot_bgcolor="white", paper_bgcolor="white",
+            xaxis_title=None, yaxis_title="Unique shoppers",
+            yaxis=dict(gridcolor=PALETTE["grid"]),
+            margin=dict(l=10, r=10, t=20, b=10),
+        )
+        st.plotly_chart(fig, use_container_width=True)
+    with c_kpi:
+        st.metric("Zones shown", f"{len(selected_zones)}")
+        st.metric("Total visitors", f"{int(ff['unique_visitors'].sum())}")
+        st.metric(
+            "Busiest zone",
+            ff.loc[ff["unique_visitors"].idxmax(), "zone"] if len(ff) else "-",
+        )
+
+    st.markdown("---")
+
     styles.section("Zone-to-zone transitions")
     styles.interpretation(
         "How shoppers moved between zones. Rows are origins, columns are "
@@ -193,6 +262,8 @@ with tab_journey:
     )
 
     trans = result.transitions.copy()
+    # Restrict to selected zones
+    trans = trans.loc[trans.index.isin(selected_zones), trans.columns.isin(selected_zones)]
     zone_names = trans.index.tolist()
 
     fig = go.Figure(data=go.Heatmap(
@@ -219,13 +290,13 @@ with tab_journey:
 
     st.markdown("---")
 
-    styles.section("What the transitions tell us")
+    styles.section("Top shopper paths")
     styles.interpretation(
-        "Plain-language summary of the most common shopper paths in the sample. "
-        "These are read directly off the matrix above."
+        "The three most common transitions in the sample. Read directly off "
+        "the matrix above."
     )
 
-    # Compute top 3 transitions
+    # Compute top transitions (excluding self-loops)
     pairs = []
     for i, a in enumerate(zone_names):
         for j, b in enumerate(zone_names):
@@ -244,7 +315,7 @@ with tab_journey:
                     help=f"Number of shoppers who moved from {a} to {b}",
                 )
     else:
-        st.info("No zone-to-zone transitions detected in the sample.")
+        st.info("No zone-to-zone transitions detected in the selected zones.")
 
 
 # =============================================================================
@@ -253,8 +324,8 @@ with tab_journey:
 with tab_engagement:
     styles.section("Per-display engagement")
     styles.interpretation(
-        "Comparison of the two retail displays. **Passers** is the total unique "
-        "shopper count in the footage (a simplification - see Methodology). "
+        "Pick one or both displays. **Passers** is the total unique shopper "
+        "count in the footage (a simplification - see Methodology). "
         "**Engagement rate** is the share of passers who entered the display zone. "
         "**Dwell** is in seconds, computed as frames inside the display / assumed FPS."
     )
@@ -263,8 +334,24 @@ with tab_engagement:
     ds["engagement_pct"] = (ds["engagement_rate"] * 100).round(1)
     ds["display_label"] = ds["display"].str.replace("_", " ").str.title()
 
+    display_choice = st.pills(
+        "Displays to compare",
+        options=ds["display_label"].tolist(),
+        default=ds["display_label"].tolist(),
+        help="Click to toggle. At least one must be selected.",
+    )
+    if not display_choice:
+        st.warning("Pick at least one display.")
+        st.stop()
+    ds_filtered = ds[ds["display_label"].isin(display_choice)]
+
     # Two side-by-side bar charts
     c1, c2 = st.columns(2, gap="large")
+
+    color_map_label = {
+        "Display A": "#22c55e",
+        "Display B": "#ec4899",
+    }
 
     with c1:
         styles.section("Average dwell time")
@@ -273,9 +360,9 @@ with tab_engagement:
             "holds shoppers longer on average."
         )
         fig = px.bar(
-            ds, x="display_label", y="avg_dwell_sec",
-            color="display", color_discrete_map={"display_a": "#22c55e", "display_b": "#ec4899"},
-            text=ds["avg_dwell_sec"].round(1),
+            ds_filtered, x="display_label", y="avg_dwell_sec",
+            color="display_label", color_discrete_map=color_map_label,
+            text=ds_filtered["avg_dwell_sec"].round(1),
         )
         fig.update_traces(textposition="outside", texttemplate="%{text}s")
         fig.update_layout(
@@ -290,14 +377,14 @@ with tab_engagement:
     with c2:
         styles.section("Engagement rate")
         styles.interpretation(
-            "Share of all shoppers in the footage who entered this display zone. "
-            "Higher means the display pulls in more foot traffic, not just longer "
-            "stays from a few people."
+            "Share of all shoppers in the footage who entered this display "
+            "zone. Higher means the display pulls in more foot traffic, not "
+            "just longer stays from a few people."
         )
         fig = px.bar(
-            ds, x="display_label", y="engagement_pct",
-            color="display", color_discrete_map={"display_a": "#22c55e", "display_b": "#ec4899"},
-            text=ds["engagement_pct"],
+            ds_filtered, x="display_label", y="engagement_pct",
+            color="display_label", color_discrete_map=color_map_label,
+            text=ds_filtered["engagement_pct"],
         )
         fig.update_traces(textposition="outside", texttemplate="%{text}%")
         fig.update_layout(
@@ -309,13 +396,48 @@ with tab_engagement:
         )
         st.plotly_chart(fig, use_container_width=True)
 
+    # Single combined comparison plot when both selected
+    if len(display_choice) == 2:
+        st.markdown("---")
+        styles.section("Side-by-side comparison")
+        styles.interpretation(
+            "Normalized comparison across both displays. Bars show the value "
+            "as a share of the maximum across the two displays, so you can "
+            "see which one wins each metric at a glance."
+        )
+        norm = ds.set_index("display_label")[["engagement_pct", "avg_dwell_sec"]].copy()
+        # Normalize each column to 0-100 within the pair
+        for col in norm.columns:
+            mx = norm[col].max()
+            if mx > 0:
+                norm[col] = (norm[col] / mx * 100).round(1)
+        norm = norm.reset_index().melt(
+            id_vars="display_label", var_name="metric", value_name="share_pct"
+        )
+        metric_labels = {"engagement_pct": "Engagement rate", "avg_dwell_sec": "Avg dwell"}
+        norm["metric"] = norm["metric"].map(metric_labels)
+        fig = px.bar(
+            norm, x="metric", y="share_pct", color="display_label",
+            barmode="group", text="share_pct",
+            color_discrete_map=color_map_label,
+        )
+        fig.update_traces(textposition="outside", texttemplate="%{text:.0f}%")
+        fig.update_layout(
+            height=340, plot_bgcolor="white", paper_bgcolor="white",
+            xaxis_title=None, yaxis_title="Share of best (%)",
+            yaxis=dict(gridcolor=PALETTE["grid"], range=[0, 115]),
+            legend_title="",
+            margin=dict(l=10, r=10, t=20, b=10),
+        )
+        st.plotly_chart(fig, use_container_width=True)
+
     st.markdown("---")
 
     styles.section("Full per-display table")
     styles.interpretation(
-        "All engagement metrics side by side. The 'passers' column normalizes "
-        "both displays against the same shopper population, so the rates are "
-        "directly comparable."
+        "All engagement metrics side by side. 'Passers' is the same for both "
+        "displays since it counts every tracked shopper in the footage, so the "
+        "rates are directly comparable."
     )
     display_df = ds[[
         "display_label", "passers", "zone_entries",
@@ -342,20 +464,54 @@ with tab_engagement:
 # Tab 4: Data & Downloads
 # =============================================================================
 with tab_data:
-    styles.section("Per-shopper journey (top 25)")
+    styles.section("Per-shopper journey")
     styles.interpretation(
-        "Top 25 longest-tracked shoppers. **frames_seen** is how many of the "
-        "200 sample frames this person was visible. **seconds_seen** converts "
-        "to wall time using the 1.5 fps assumption."
+        "Top N longest-tracked shoppers, sortable. **frames_seen** is how many "
+        "of the 200 sample frames this person was visible. **seconds_seen** "
+        "converts to wall time using the 1.5 fps assumption."
     )
 
     track_lengths = (
         result.tracks_df.groupby("track_id").size()
-        .sort_values(ascending=False).head(25).reset_index()
+        .reset_index().rename(columns={0: "frames_seen"})
     )
     track_lengths.columns = ["track_id", "frames_seen"]
     track_lengths["seconds_seen"] = (track_lengths["frames_seen"] / result.fps).round(1)
-    st.dataframe(track_lengths, use_container_width=True, hide_index=True)
+
+    ctrl1, ctrl2, ctrl3 = st.columns([1, 1, 2])
+    with ctrl1:
+        top_n = st.slider("Show top N shoppers", 5, min(50, len(track_lengths)), 25)
+    with ctrl2:
+        sort_by = st.selectbox("Sort by", ["frames_seen", "track_id", "seconds_seen"])
+    with ctrl3:
+        ascending = st.checkbox("Ascending", value=False)
+
+    track_lengths_sorted = track_lengths.sort_values(sort_by, ascending=ascending).head(top_n)
+    st.dataframe(track_lengths_sorted, use_container_width=True, hide_index=True)
+
+    st.markdown("---")
+
+    # Quick bar chart of distribution
+    styles.section("How long are shoppers usually visible?")
+    styles.interpretation(
+        "Distribution of frames-seen across all unique shoppers. Most shoppers "
+        "are visible for only a handful of frames (they walk through quickly); "
+        "a long tail stay longer."
+    )
+    fig = px.histogram(
+        track_lengths, x="frames_seen", nbins=20,
+        color_discrete_sequence=[PALETTE["accent"]],
+    )
+    fig.update_layout(
+        height=280, plot_bgcolor="white", paper_bgcolor="white",
+        xaxis_title="Frames seen",
+        yaxis_title="Number of shoppers",
+        showlegend=False,
+        yaxis=dict(gridcolor=PALETTE["grid"]),
+        xaxis=dict(gridcolor=PALETTE["grid"]),
+        margin=dict(l=10, r=10, t=20, b=10),
+    )
+    st.plotly_chart(fig, use_container_width=True)
 
     st.markdown("---")
 

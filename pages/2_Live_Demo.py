@@ -1,10 +1,11 @@
 """
-Live Demo - annotated video player + per-frame analytics chart for the
-bundled sample.
+Live Demo - scrub through the annotated sample video and inspect what the
+detector saw in each frame.
 
-Renders the pre-baked annotated video. No live inference runs on Streamlit
-Cloud's free tier; this page shows the output of the pipeline rather than
-re-running it.
+The annotated video is shipped as a static file with the app, so playback is
+instant. The frame scrubber below the player also pulls 20 pre-extracted
+frames (saved as JPEGs during the build) so you can click through the video
+without depending on opencv at runtime.
 """
 
 import json
@@ -31,6 +32,7 @@ styles.inject()
 
 HERE = Path(__file__).parent.parent
 ASSETS = HERE / "assets"
+SAMPLE_FRAMES = ASSETS / "sample_frames"
 
 
 # -----------------------------------------------------------------------------
@@ -55,32 +57,35 @@ def load_annotated_video():
 
 
 @st.cache_data
-def get_frames_for_video(annotated_bytes, n=6):
-    if annotated_bytes is None:
+def list_sample_frame_indices():
+    if not SAMPLE_FRAMES.exists():
         return []
-    import tempfile, os
-    with tempfile.NamedTemporaryFile(suffix=".mp4", delete=False) as t:
-        t.write(annotated_bytes)
-        tmp = t.name
-    try:
-        cap = cv2.VideoCapture(tmp)
-        total = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
-        idxs = np.linspace(0, max(total - 1, 0), n, dtype=int)
-        out = []
-        for idx in idxs:
-            cap.set(cv2.CAP_PROP_POS_FRAMES, int(idx))
-            ok, fr = cap.read()
-            if ok:
-                out.append(cv2.cvtColor(fr, cv2.COLOR_BGR2RGB))
-        cap.release()
-        return out
-    except Exception:
-        return []
-    finally:
+    indices = []
+    for f in sorted(SAMPLE_FRAMES.glob("frame_*.jpg")):
         try:
-            os.unlink(tmp)
-        except OSError:
-            pass
+            idx = int(f.stem.split("_")[1])
+            indices.append(idx)
+        except (IndexError, ValueError):
+            continue
+    return indices
+
+
+@st.cache_data
+def get_frame_image(frame_idx: int):
+    """Load one of the pre-extracted sample frames as RGB bytes."""
+    path = SAMPLE_FRAMES / f"frame_{int(frame_idx):04d}.jpg"
+    if not path.exists():
+        return None
+    with open(path, "rb") as f:
+        return f.read()
+
+
+@st.cache_data
+def get_detections_at_frame(frame_idx: int):
+    """Return the detection rows for a given frame index."""
+    if result is None or not len(result.tracks_df):
+        return pd.DataFrame()
+    return result.tracks_df[result.tracks_df["frame"] == frame_idx].copy()
 
 
 # -----------------------------------------------------------------------------
@@ -90,11 +95,10 @@ with st.sidebar:
     st.markdown("## About this view")
     st.markdown(
         """
-The annotated video is **pre-rendered** and shipped with the app. The
-underlying pipeline ran once during the build step and the results
-were baked into the file you see here.
+The annotated video was generated during the build step and ships with
+the app - playback is instant, no inference happens in the browser.
 
-To re-run the pipeline on a new video, see the Methodology page.
+To run the pipeline on your own video, see the Methodology page.
         """
     )
 
@@ -104,15 +108,16 @@ To re-run the pipeline on a new video, see the Methodology page.
 # -----------------------------------------------------------------------------
 styles.hero(
     "Live Demo",
-    "Watch the computer-vision pipeline's output on the sample video.",
+    "Scrub through the sample video and inspect what the detector found.",
 )
 
 
 # -----------------------------------------------------------------------------
-# Main
+# Load data
 # -----------------------------------------------------------------------------
 result = load_sample_results()
 video_bytes = load_annotated_video()
+frame_indices = list_sample_frame_indices()
 
 if video_bytes is None:
     st.warning(
@@ -122,39 +127,154 @@ if video_bytes is None:
     st.stop()
 
 
+# -----------------------------------------------------------------------------
 # Tabs
-tab_video, tab_chart = st.tabs(["Annotated video", "Per-frame chart"])
+# -----------------------------------------------------------------------------
+tab_video, tab_scrub, tab_chart = st.tabs([
+    "Video playback",
+    "Frame inspector",
+    "Activity over time",
+])
 
 
+# =============================================================================
+# Tab 1: Video playback
+# =============================================================================
 with tab_video:
     styles.section("Annotated playback")
     styles.interpretation(
         "Each tracked person has a persistent ID. Colored polygons are the "
-        "journey + display zones. Same data the dashboard is built on."
+        "journey and display zones - same data the dashboard is built on."
     )
     st.video(video_bytes)
 
     st.markdown("---")
 
-    styles.section("Sample frames")
-    styles.interpretation(
-        "Six evenly-spaced frames from the annotated video. Watch how shoppers "
-        "enter from the top of the frame, move through the center and storefronts, "
-        "and exit via checkout."
-    )
-    frames = get_frames_for_video(video_bytes, n=6)
-    if frames:
+    if frame_indices:
+        styles.section("Sample frames")
+        styles.interpretation(
+            f"{len(frame_indices)} evenly-spaced frames from the video. "
+            "Click into the Frame Inspector tab to scrub between them and "
+            "see per-frame detection details."
+        )
+        # Show 6 of them in a 3-column grid
+        pick = frame_indices[::max(1, len(frame_indices) // 6)][:6]
         cols = st.columns(3)
-        for i, fr in enumerate(frames):
+        for i, idx in enumerate(pick):
             with cols[i % 3]:
-                st.image(fr, use_container_width=True)
+                img_bytes = get_frame_image(idx)
+                if img_bytes is not None:
+                    st.image(img_bytes, use_container_width=True, caption=f"Frame {idx}")
+
+
+# =============================================================================
+# Tab 2: Frame Inspector (the interactive part)
+# =============================================================================
+with tab_scrub:
+    if not frame_indices:
+        st.info("No sample frames available. Re-run the build script to generate them.")
     else:
-        best = ASSETS / "best_frame.jpg"
-        if best.exists():
-            st.image(str(best), use_container_width=True)
-            st.caption("Frame extraction unavailable - showing the highest-activity frame instead.")
+        styles.section("Scrub through the video")
+        styles.interpretation(
+            "Drag the slider to pick a frame. The image and the detection "
+            "table below update in real time - so you can click around and "
+            "see exactly what the system tracked in any moment."
+        )
+
+        # Build a quick lookup: frame index -> time string + detection count
+        def frame_label(idx):
+            seconds = idx / result.fps if result and result.fps else 0
+            return f"frame {idx}  ({seconds:.1f}s)"
+
+        # Two sliders: a coarse step slider + a fine numeric input
+        c_slider, c_number = st.columns([4, 1])
+        with c_slider:
+            chosen = st.select_slider(
+                "Frame",
+                options=frame_indices,
+                value=frame_indices[len(frame_indices) // 2],
+                format_func=frame_label,
+                label_visibility="collapsed",
+            )
+        with c_number:
+            chosen_num = st.number_input(
+                "or jump to",
+                min_value=frame_indices[0],
+                max_value=frame_indices[-1],
+                value=int(chosen),
+                step=1,
+                label_visibility="collapsed",
+            )
+        chosen = int(chosen_num)
+
+        # Show the selected frame
+        img_bytes = get_frame_image(chosen)
+        if img_bytes is not None:
+            st.image(
+                img_bytes,
+                use_container_width=True,
+                caption=f"Frame {chosen} - {chosen / result.fps:.1f}s into the video",
+            )
+
+        # Per-frame detection table
+        st.markdown("---")
+        styles.section(f"Detections in this frame")
+        styles.interpretation(
+            "Every row is one tracked person visible in the selected frame. "
+            "**Confidence** is the detector's certainty. **Position** is the "
+            "foot-point (bottom-center of the bounding box) in pixel coordinates."
+        )
+
+        if result is not None and len(result.tracks_df):
+            df = result.tracks_df[result.tracks_df["frame"] == chosen].copy()
+            if len(df):
+                # Add zone membership (which journey / display zone the foot-point is in)
+                def _zone_for_point(row, zones):
+                    from shapely.geometry import Point
+                    pt = Point(row["cx"], row["cy"])
+                    for name, poly in zones.items():
+                        if poly.contains(pt):
+                            return name
+                    return "(none)"
+
+                j_zones = result.journey_zones
+                d_zones = result.display_zones
+                df["journey_zone"] = df.apply(lambda r: _zone_for_point(r, j_zones), axis=1)
+                df["display_zone"] = df.apply(
+                    lambda r: _zone_for_point(r, d_zones) if _zone_for_point(r, d_zones) in d_zones else "-",
+                    axis=1,
+                )
+
+                show = df[[
+                    "track_id", "conf", "journey_zone", "display_zone",
+                    "cx", "cy",
+                ]].rename(columns={
+                    "track_id": "ID",
+                    "conf": "Confidence",
+                    "journey_zone": "Journey zone",
+                    "display_zone": "Display zone",
+                    "cx": "X (px)",
+                    "cy": "Y (px)",
+                }).sort_values("ID")
+                st.dataframe(
+                    show.style.format({"Confidence": "{:.2f}", "X (px)": "{:.0f}", "Y (px)": "{:.0f}"}),
+                    use_container_width=True, hide_index=True,
+                )
+
+                # Quick metrics for this frame
+                st.markdown("")
+                m1, m2, m3 = st.columns(3)
+                m1.metric("People in frame", f"{df['track_id'].nunique()}")
+                m2.metric("Avg confidence", f"{df['conf'].mean():.2f}")
+                inside = (df["journey_zone"] != "(none)").sum()
+                m3.metric("Inside a journey zone", f"{inside} / {len(df)}")
+            else:
+                st.info("No detections in this frame.")
 
 
+# =============================================================================
+# Tab 3: Activity over time
+# =============================================================================
 with tab_chart:
     if result is not None and len(result.tracks_df):
         styles.section("Detections over time")
@@ -169,9 +289,19 @@ with tab_chart:
             .agg(detections=("track_id", "size"), people=("track_id", "nunique"))
             .reset_index()
         )
+        n_per_frame["time_s"] = (n_per_frame["frame"] / result.fps).round(1)
+
+        # Toggle to switch x-axis between frame index and time
+        x_choice = st.radio(
+            "X axis",
+            ["Frame index", "Time (seconds)"],
+            horizontal=True,
+            label_visibility="collapsed",
+        )
+        x_col = "time_s" if x_choice == "Time (seconds)" else "frame"
 
         df_long = n_per_frame.melt(
-            id_vars="frame",
+            id_vars=[x_col],
             value_vars=["detections", "people"],
             var_name="metric", value_name="count",
         )
@@ -181,16 +311,17 @@ with tab_chart:
         })
 
         fig = px.line(
-            df_long, x="frame", y="count", color="metric",
+            df_long, x=x_col, y="count", color="metric",
             color_discrete_map={
                 "Raw detections (bboxes)": "#94a3b8",
                 "Unique people (track IDs)": "#1e3a8a",
             },
+            markers=True,
         )
         fig.update_layout(
             height=400,
             plot_bgcolor="white", paper_bgcolor="white",
-            xaxis_title="Frame index",
+            xaxis_title=x_choice,
             yaxis_title="Count per frame",
             legend_title="",
             yaxis=dict(gridcolor="#e2e8f0"),
@@ -201,18 +332,10 @@ with tab_chart:
 
         st.markdown("---")
 
-        c1, c2, c3 = st.columns(3)
-        c1.metric(
-            "Avg detections / frame",
-            f"{n_per_frame['detections'].mean():.1f}",
-        )
-        c2.metric(
-            "Avg people / frame",
-            f"{n_per_frame['people'].mean():.1f}",
-        )
-        c3.metric(
-            "Peak people in a frame",
-            f"{int(n_per_frame['people'].max())}",
-        )
+        c1, c2, c3, c4 = st.columns(4)
+        c1.metric("Avg detections / frame", f"{n_per_frame['detections'].mean():.1f}")
+        c2.metric("Avg people / frame", f"{n_per_frame['people'].mean():.1f}")
+        c3.metric("Peak people in a frame", f"{int(n_per_frame['people'].max())}")
+        c4.metric("Busiest frame", f"#{int(n_per_frame.loc[n_per_frame['people'].idxmax(), 'frame'])}")
     else:
         st.info("No tracks available for chart.")
