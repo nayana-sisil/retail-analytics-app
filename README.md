@@ -1,4 +1,4 @@
-# 🛍️ Retail Video Analytics — Streamlit Demo
+# Retail Video Analytics - Streamlit Demo
 
 A public-facing web demo of a computer-vision pipeline that turns retail
 video into **shopper journey** + **display engagement** analytics.
