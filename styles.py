@@ -16,15 +16,15 @@ _CSS = """
                      Roboto, "Helvetica Neue", Arial, sans-serif;
         -webkit-font-smoothing: antialiased;
     }
-    h1 { font-weight: 700; letter-spacing: -0.02em; color: #0f172a; }
-    h2 { font-weight: 600; letter-spacing: -0.01em; color: #1e293b;
+    h1 { font-weight: 800; letter-spacing: -0.02em; color: #0f172a; }
+    h2 { font-weight: 700; letter-spacing: -0.01em; color: #1e293b;
          border-bottom: 2px solid #e2e8f0; padding-bottom: 0.4rem; margin-top: 1.5rem; }
     h3 { font-weight: 600; color: #334155; margin-top: 1.2rem; }
-    p, li { color: #334155; line-height: 1.6; }
+    p, li { color: #334155; line-height: 1.65; }
 
-    /* ---- KPI metric cards ---- */
+    /* ---- Big number KPI cards ---- */
     [data-testid="stMetricValue"] {
-        font-size: 1.9rem; font-weight: 700; color: #0f172a;
+        font-size: 2.2rem; font-weight: 800; color: #0f172a;
     }
     [data-testid="stMetricLabel"] {
         font-size: 0.78rem; font-weight: 600; color: #64748b;
@@ -36,27 +36,67 @@ _CSS = """
     [data-testid="stVerticalBlockBorderWrapper"] {
         background: #ffffff;
         border: 1px solid #e2e8f0;
-        border-radius: 10px;
-        padding: 1.25rem 1.5rem;
-        box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+        border-radius: 12px;
+        padding: 1.5rem 1.75rem;
+        box-shadow: 0 1px 3px rgba(15, 23, 42, 0.05);
     }
 
     /* ---- Buttons ---- */
     .stDownloadButton button, .stButton button {
-        border-radius: 6px; font-weight: 500;
+        border-radius: 8px; font-weight: 600;
     }
 
     /* ---- Tables ---- */
-    .stDataFrame { border-radius: 6px; overflow: hidden; }
+    .stDataFrame { border-radius: 8px; overflow: hidden; }
 
     /* ---- Hero block ---- */
     .hero {
         background: linear-gradient(135deg, #1e3a8a 0%, #3b82f6 100%);
-        color: #ffffff; padding: 2.5rem 2rem; border-radius: 12px;
+        color: #ffffff; padding: 3rem 2.5rem; border-radius: 14px;
         margin-bottom: 1.5rem;
     }
-    .hero h1 { color: #ffffff; margin: 0 0 0.5rem 0; }
-    .hero p { color: #dbeafe; font-size: 1.05rem; margin: 0; }
+    .hero h1 { color: #ffffff; margin: 0 0 0.6rem 0; font-size: 2.4rem; }
+    .hero p { color: #dbeafe; font-size: 1.15rem; margin: 0; line-height: 1.5; }
+
+    /* ---- Use-case cards ---- */
+    .use-card {
+        background: linear-gradient(135deg, #ffffff 0%, #f8fafc 100%);
+        border: 1px solid #e2e8f0;
+        border-left: 4px solid #3b82f6;
+        border-radius: 10px;
+        padding: 1.25rem 1.5rem;
+        height: 100%;
+        transition: transform 0.15s ease;
+    }
+    .use-card h3 {
+        margin: 0 0 0.5rem 0; color: #0f172a; font-size: 1.05rem;
+    }
+    .use-card p { color: #475569; margin: 0 0 0.5rem 0; font-size: 0.95rem; }
+    .use-card .answer {
+        color: #1e3a8a; font-weight: 600; font-size: 0.95rem;
+        margin: 0.5rem 0 0 0; padding-top: 0.5rem;
+        border-top: 1px dashed #cbd5e1;
+    }
+
+    /* ---- Story callout ---- */
+    .story {
+        background: linear-gradient(135deg, #f0fdf4 0%, #ecfeff 100%);
+        border-left: 4px solid #16a34a;
+        border-radius: 10px;
+        padding: 1.25rem 1.5rem;
+        margin: 0.75rem 0;
+    }
+    .story h3 {
+        margin: 0 0 0.4rem 0; color: #166534; font-size: 1.1rem;
+    }
+    .story p { color: #334155; margin: 0; font-size: 0.95rem; }
+
+    /* ---- Question/Answer blocks ---- */
+    .qa-q {
+        color: #1e3a8a; font-weight: 700; font-size: 1.05rem;
+        margin: 1rem 0 0.4rem 0;
+    }
+    .qa-a { color: #334155; margin: 0 0 0.5rem 0; }
 
     /* ---- Caption / small text ---- */
     .stCaption, [data-testid="stCaptionContainer"] {
@@ -71,6 +111,9 @@ _CSS = """
         font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.06em;
         color: #64748b; border: none; margin-top: 1rem;
     }
+
+    /* ---- Make st.columns gaps a bit bigger for cards ---- */
+    [data-testid="stHorizontalBlock"] { gap: 1rem; }
 </style>
 """
 
@@ -104,5 +147,28 @@ def interpretation(text: str):
         f'color:#475569;font-size:0.92rem;line-height:1.5;">'
         f'<strong style="color:#1e293b;">How to read this:</strong> {text}'
         f'</div>',
+        unsafe_allow_html=True,
+    )
+
+
+def use_card(icon: str, question: str, what_it_does: str, value: str):
+    """A use-case card. icon is a single-character glyph (e.g. an emoji or symbol)."""
+    st.markdown(
+        f"""
+<div class="use-card">
+  <div style="font-size:1.8rem;line-height:1;margin-bottom:0.4rem;">{icon}</div>
+  <h3>{question}</h3>
+  <p>{what_it_does}</p>
+  <div class="answer">So you can {value}</div>
+</div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+def story(title: str, body: str):
+    """A value-style callout: 'here is what we learned and what it means'."""
+    st.markdown(
+        f'<div class="story"><h3>{title}</h3><p>{body}</p></div>',
         unsafe_allow_html=True,
     )

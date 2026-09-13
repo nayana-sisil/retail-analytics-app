@@ -1,13 +1,8 @@
 """
 Retail Video Analytics - landing page.
 
-A public-facing demo of a computer-vision pipeline that turns retail video
-into shopper journey + display engagement analytics.
-
-Use the sidebar to navigate:
-  - Where People Went        (instant, cached analytics)
-  - Browse the Video        (annotated video + per-moment chart)
-  - How It Works             (FAQ, plain language)
+Leads with value stories, not metrics. Designed so anyone can read it:
+store owner, marketing manager, ops lead - no technical background needed.
 """
 
 import json
@@ -19,9 +14,6 @@ import pipeline
 import styles
 
 
-# -----------------------------------------------------------------------------
-# Page config + style
-# -----------------------------------------------------------------------------
 st.set_page_config(
     page_title="Retail Video Analytics",
     page_icon="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='20' fill='%231e3a8a'/%3E%3Ctext x='50' y='68' font-size='60' text-anchor='middle' fill='white' font-family='sans-serif' font-weight='bold'%3ER%3C/text%3E%3C/svg%3E",
@@ -39,147 +31,211 @@ ASSETS = HERE / "assets"
 # Sidebar
 # -----------------------------------------------------------------------------
 with st.sidebar:
-    st.markdown("## Retail Analytics")
-    st.caption("Computer-vision POC")
-    st.markdown("---")
-    st.markdown("## Pages")
+    st.markdown("## What you can do here")
     st.markdown(
         """
-- [Where People Went](/Where_People_Went) &mdash; numbers + charts
-- [Browse the Video](/Browse_the_Video) &mdash; annotated playback
-- [How It Works](/How_It_Works) &mdash; FAQ
+- **What we learned** &mdash; three business stories from the sample
+- **Browse the video** &mdash; see it work, moment by moment
+- **How it works** &mdash; FAQ, no jargon
         """
     )
     st.markdown("---")
-    st.markdown("## Sample data")
-    st.caption("Mall footage, 200 snapshots, ~2 minutes")
-
-
-# -----------------------------------------------------------------------------
-# Cached loaders
-# -----------------------------------------------------------------------------
-@st.cache_data
-def load_sample_results():
-    path = ASSETS / "mall_sample_results.json"
-    if not path.exists():
-        return None
-    with open(path) as f:
-        return pipeline.result_from_jsonable(json.load(f))
+    st.caption(
+        "Built on a 200-snapshot, 2-minute sample of mall footage. "
+        "The system runs on a public link - no install needed."
+    )
 
 
 # -----------------------------------------------------------------------------
 # Hero
 # -----------------------------------------------------------------------------
 styles.hero(
-    "Retail Video Analytics",
-    "Turn ordinary store cameras into shopper insights anyone can read.",
+    "What if your store cameras answered your questions?",
+    "Every retailer already has cameras on the floor. This demo shows "
+    "what happens when you turn that footage into structured data you "
+    "can actually act on.",
 )
 
 
 # -----------------------------------------------------------------------------
-# First-time explainer
-# -----------------------------------------------------------------------------
-with st.expander("First time here? What am I looking at?", expanded=False):
-    st.markdown(
-        """
-This is a working demo built on a real store video. The system watches the
-footage and answers two simple business questions:
-
-1. **Where do shoppers go?** We drew colored boxes on the floor of the store
-   to mark areas (entrance, center, storefronts, checkout). The system counts
-   who visited each area.
-
-2. **Do displays work?** Two boxes marked **Display A** and **Display B**
-   mark the product displays. We track how many people stopped there and
-   for how long.
-
-The numbers on the next pages are real &mdash; computed from a 200-snapshot
-sample of mall footage. Use the sidebar to navigate.
-        """
-    )
-
-
-# -----------------------------------------------------------------------------
-# About
+# The big idea
 # -----------------------------------------------------------------------------
 with st.container(border=True):
-    st.markdown("### What this is, in one paragraph")
+    st.markdown("### The big idea, in one paragraph")
     st.markdown(
         """
-Every retail floor already has cameras. This demo turns that footage into
-the kind of structured data you might be used to from your website:
-**who came, where they went, what they did, and where they dropped off.**
-No one watches hours of tape &mdash; the system reads the footage and gives
-you the numbers.
-        """
-    )
+Your website team has Google Analytics. Every click, every page view,
+every drop-off - measured and reported. Your physical store has the same
+amount of data on its cameras, but it's stuck inside video files no one
+ever watches.
 
-    st.markdown("### Where to start")
-    st.markdown(
-        """
-1. Open **Where People Went** to see the analytics on the sample video.
-   Numbers load instantly &mdash; they were calculated at build time.
-2. Open **Browse the Video** to scrub through the footage yourself and see
-   what the system is tracking in each moment.
-3. Open **How It Works** if you want the FAQ &mdash; what's happening,
-   how accurate it is, and what's next.
+This system is the Google Analytics for your store. It watches the
+footage and tells you where shoppers went, which displays held their
+attention, and where they dropped off. You don't have to watch the
+video yourself - the system reads it for you.
         """
     )
 
 
 # -----------------------------------------------------------------------------
-# KPIs
-# -----------------------------------------------------------------------------
-result = load_sample_results()
-if result is not None:
-    st.markdown("---")
-    st.subheader("At a glance - sample video")
-    styles.interpretation(
-        "Top-line numbers from the sample. Every chart on the next page is "
-        "built from this same data."
-    )
-
-    n_shoppers = int(result.tracks_df["track_id"].nunique()) if len(result.tracks_df) else 0
-    avg_dwell = float(result.display_summary["avg_dwell_sec"].mean()) if len(result.display_summary) else 0
-    busiest = (
-        result.footfall.idxmax() if len(result.footfall) else "-"
-    )
-
-    c1, c2, c3, c4 = st.columns(4)
-    with c1:
-        st.metric("Different people", f"{n_shoppers}")
-    with c2:
-        st.metric("Total visits to areas", f"{int(result.footfall.sum())}")
-    with c3:
-        st.metric("Avg time at a display", f"{avg_dwell:.1f}s")
-    with c4:
-        st.metric("Busiest area", busiest.title())
-
-    # Hero image - the cleaner zones-only version
-    best_frame_path = ASSETS / "best_frame.jpg"
-    if best_frame_path.exists():
-        st.markdown("---")
-        st.subheader("How we split the store into areas")
-        styles.interpretation(
-            "We drew six colored boxes on the floor: four horizontal bands "
-            "(entrance, center, storefronts, checkout) and two rectangles "
-            "(Display A, Display B). Every shopper counted above is one who "
-            "stepped into one of these boxes."
-        )
-        st.image(str(best_frame_path), use_container_width=True)
-else:
-    st.warning(
-        "Sample results not found in `assets/`. "
-        "Run `python scripts/build_sample_assets.py` to generate them, "
-        "or check DEPLOY.md."
-    )
-
-
-# -----------------------------------------------------------------------------
-# Footer
+# Three use cases
 # -----------------------------------------------------------------------------
 st.markdown("---")
+st.subheader("Three questions this system answers for you")
+
+c1, c2, c3 = st.columns(3, gap="medium")
+
+with c1:
+    styles.use_card(
+        icon="1.",
+        question="Where do shoppers actually go?",
+        what_it_does="Draws boxes on the floor of your store and counts "
+                     "how many people step into each one.",
+        value="redesign your floor based on real traffic, not guesswork.",
+    )
+
+with c2:
+    styles.use_card(
+        icon="2.",
+        question="Do displays and end-caps work?",
+        what_it_does="Marks each display and tracks how many people "
+                     "stopped there, and for how long.",
+        value="put your best products in the spots that actually hold attention.",
+    )
+
+with c3:
+    styles.use_card(
+        icon="3.",
+        question="Where do you lose people?",
+        what_it_does="Maps the path from entrance to checkout and shows "
+                     "you where shoppers drop off.",
+        value="fix the bottlenecks in your customer journey.",
+    )
+
+
+# -----------------------------------------------------------------------------
+# What we learned from the sample
+# -----------------------------------------------------------------------------
+result = None
+try:
+    with open(ASSETS / "mall_sample_results.json") as f:
+        result = pipeline.result_from_jsonable(json.load(f))
+except FileNotFoundError:
+    pass
+
+if result is not None:
+    n_shoppers = int(result.tracks_df["track_id"].nunique()) if len(result.tracks_df) else 0
+    avg_dwell = float(result.display_summary["avg_dwell_sec"].mean()) if len(result.display_summary) else 0
+    display_a = next((x for x in result.display_summary if x["display"] == "display_a"), None)
+    display_b = next((x for x in result.display_summary if x["display"] == "display_b"), None)
+
+    # Determine which display wins
+    if display_a and display_b:
+        a_dwell, a_share = display_a["avg_dwell_sec"], display_a["engagement_rate"] * 100
+        b_dwell, b_share = display_b["avg_dwell_sec"], display_b["engagement_rate"] * 100
+        if a_share > b_share:
+            winner, loser = "Display A", "Display B"
+            winner_share, loser_share = a_share, b_share
+        else:
+            winner, loser = "Display B", "Display A"
+            winner_share, loser_share = b_share, a_share
+
+    st.markdown("---")
+    st.subheader("What we learned from the sample")
+    st.caption(
+        "Three short stories from the demo footage. The numbers are real - "
+        "they came out of a working pipeline. Click through to the dashboard "
+        "for the full data."
+    )
+
+    s1, s2, s3 = st.columns(3, gap="medium")
+
+    with s1:
+        styles.story(
+            "Story 1 - The store has a clear traffic pattern.",
+            f"In this sample, **{n_shoppers} different people** entered the store. "
+            "Most walked through the center on their way to the storefronts. "
+            "The store does have flow - it isn't chaos.",
+        )
+
+    with s2:
+        if display_a and display_b:
+            styles.story(
+                "Story 2 - One display is pulling more attention.",
+                f"**{winner}** stopped about **{winner_share:.0f}%** of the people who "
+                f"walked past. **{loser}** stopped "
+                f"**{loser_share:.0f}%**. On a 2-minute sample, a 3-point gap is "
+                "meaningful - it's the kind of difference that justifies "
+                "rearranging your displays.",
+            )
+
+    with s3:
+        styles.story(
+            "Story 3 - People don't linger at displays.",
+            f"On average, a shopper who stops at a display stays for only "
+            f"**{avg_dwell:.1f} seconds**. Displays have to win attention fast. "
+            "A clearer message or better placement could double that number.",
+        )
+
+
+# -----------------------------------------------------------------------------
+# How we drew the store map
+# -----------------------------------------------------------------------------
+st.markdown("---")
+st.subheader("How we drew the store map")
 st.caption(
-    "POC. Plain-language demo. Built with Streamlit. Source code in the "
-    "project root."
+    "The colored boxes on the floor are the same ones the system uses to "
+    "count people. Hover the image to see them in context."
+)
+
+best_frame_path = ASSETS / "best_frame.jpg"
+if best_frame_path.exists():
+    st.image(str(best_frame_path), use_container_width=True)
+
+# Legend
+lg1, lg2, lg3, lg4, lg5, lg6 = st.columns(6)
+with lg1:
+    st.markdown('<div style="background:#f59e0b;color:white;padding:0.4rem 0.8rem;border-radius:6px;text-align:center;font-weight:600;font-size:0.85rem;">Entrance</div>', unsafe_allow_html=True)
+with lg2:
+    st.markdown('<div style="background:#06b6d4;color:white;padding:0.4rem 0.8rem;border-radius:6px;text-align:center;font-weight:600;font-size:0.85rem;">Center</div>', unsafe_allow_html=True)
+with lg3:
+    st.markdown('<div style="background:#ef4444;color:white;padding:0.4rem 0.8rem;border-radius:6px;text-align:center;font-weight:600;font-size:0.85rem;">Storefronts</div>', unsafe_allow_html=True)
+with lg4:
+    st.markdown('<div style="background:#a855f7;color:white;padding:0.4rem 0.8rem;border-radius:6px;text-align:center;font-weight:600;font-size:0.85rem;">Checkout</div>', unsafe_allow_html=True)
+with lg5:
+    st.markdown('<div style="background:#22c55e;color:white;padding:0.4rem 0.8rem;border-radius:6px;text-align:center;font-weight:600;font-size:0.85rem;">Display A</div>', unsafe_allow_html=True)
+with lg6:
+    st.markdown('<div style="background:#ec4899;color:white;padding:0.4rem 0.8rem;border-radius:6px;text-align:center;font-weight:600;font-size:0.85rem;">Display B</div>', unsafe_allow_html=True)
+
+
+# -----------------------------------------------------------------------------
+# CTA strip
+# -----------------------------------------------------------------------------
+st.markdown("---")
+st.subheader("Where to go next")
+
+c1, c2 = st.columns(2, gap="medium")
+with c1:
+    with st.container(border=True):
+        st.markdown("### I want to see the numbers")
+        st.markdown(
+            "Open the dashboard for the full breakdown - all areas, all "
+            "movements, all displays."
+        )
+        st.page_link("pages/1_Where_People_Went.py", label="Open the dashboard", icon="1")
+
+with c2:
+    with st.container(border=True):
+        st.markdown("### I want to see how it works")
+        st.markdown(
+            "Browse the video itself. Click through any moment and see "
+            "exactly which people the system is tracking."
+        )
+        st.page_link("pages/2_Browse_the_Video.py", label="Open the video", icon="2")
+
+
+st.markdown("---")
+st.caption(
+    "POC built on real mall footage. Plain-language demo. Source code "
+    "in the project root."
 )

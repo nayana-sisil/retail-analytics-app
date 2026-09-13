@@ -1,8 +1,9 @@
 """
-Results Dashboard - the numbers from the sample video.
+Where People Went - the dashboard, reframed around value stories.
 
-The data was calculated at build time and is shipped with the app, so the
-page loads instantly. Use the tabs and controls to slice the data.
+Each tab leads with a story (what we learned, what it means), then shows
+the numbers that back it up. The numbers are for verification; the
+stories are for decisions.
 """
 
 import json
@@ -31,7 +32,6 @@ HERE = Path(__file__).parent.parent
 ASSETS = HERE / "assets"
 
 
-# Colors for the four store areas + two displays (kept in sync with the hero image)
 AREA_COLORS = {
     "entrance":    "#f59e0b",
     "center":      "#06b6d4",
@@ -53,10 +53,7 @@ def load_sample_results():
 
 result = load_sample_results()
 if result is None:
-    st.error(
-        "Sample results file `assets/mall_sample_results.json` not found. "
-        "Run `python scripts/build_sample_assets.py` to generate it, then restart."
-    )
+    st.error("Sample data missing. Run scripts/build_sample_assets.py first.")
     st.stop()
 
 
@@ -64,206 +61,231 @@ if result is None:
 # Sidebar
 # -----------------------------------------------------------------------------
 with st.sidebar:
-    st.markdown("## About the sample")
-    st.caption(
-        f"About {result.n_frames_processed / result.fps:.0f} seconds of mall "
-        f"footage, analyzed at {result.fps} snapshots per second."
-    )
-    st.markdown("---")
-    st.markdown("## Tab guide")
+    st.markdown("## What each tab tells you")
     st.markdown(
         """
-- **Overview** - the headline numbers
-- **Where People Went** - area visits and movement
-- **Did Displays Work** - how the displays did
-- **Numbers & Downloads** - tables and CSVs
+- **The headline** - the one thing to remember
+- **Where people went** - the traffic story
+- **Did displays work** - the display story
+- **The numbers** - tables and CSVs
         """
     )
 
 
 # -----------------------------------------------------------------------------
-# Header
+# Hero
 # -----------------------------------------------------------------------------
 styles.hero(
     "Where People Went",
-    f"Headline numbers from the sample video "
-    f"({result.n_frames_processed} snapshots, "
-    f"~{result.n_frames_processed / result.fps:.0f} seconds of footage).",
+    f"Three business stories from {result.n_frames_processed} snapshots "
+    f"of mall footage (~{result.n_frames_processed / result.fps:.0f} seconds). "
+    f"Each tab is one story.",
 )
 
 
 # -----------------------------------------------------------------------------
 # First-time explainer
 # -----------------------------------------------------------------------------
-with st.expander("First time here? How to read these numbers", expanded=False):
+with st.expander("First time here? How to read this dashboard", expanded=False):
     st.markdown(
         """
-- **Different people** = how many unique shoppers the system spotted in the footage.
-- **Total visits to areas** = sum of every person counted in every area. One
-  person visiting two areas counts twice.
-- **Avg time at a display** = average seconds a person spent inside Display A
-  or Display B.
-- **Busiest area** = which of the four store areas had the most unique visitors.
+Each tab is built around a **story** - one clear takeaway you can act on.
+Below the story, you'll find the **numbers** that back it up, so anyone can
+verify the claim.
+
+The store floor was split into **four areas** (entrance, center, storefronts,
+checkout) and **two displays** (A, B). The system counts unique people in each.
         """
     )
+
+
+# -----------------------------------------------------------------------------
+# Compute the headline story upfront
+# -----------------------------------------------------------------------------
+n_shoppers = int(result.tracks_df["track_id"].nunique()) if len(result.tracks_df) else 0
+display_a = next((x for x in result.display_summary if x["display"] == "display_a"), None)
+display_b = next((x for x in result.display_summary if x["display"] == "display_b"), None)
+
+# Determine the winning display
+winner = None
+if display_a and display_b:
+    if display_a["engagement_rate"] >= display_b["engagement_rate"]:
+        winner = ("Display A", display_a)
+        loser = ("Display B", display_b)
+    else:
+        winner = ("Display B", display_b)
+        loser = ("Display A", display_a)
 
 
 # -----------------------------------------------------------------------------
 # Tabs
 # -----------------------------------------------------------------------------
-tab_overview, tab_journey, tab_engagement, tab_data = st.tabs([
-    "Overview",
-    "Where People Went",
-    "Did Displays Work",
-    "Numbers & Downloads",
+tab_headline, tab_journey, tab_engagement, tab_data = st.tabs([
+    "The headline",
+    "Where people went",
+    "Did displays work",
+    "The numbers",
 ])
 
 
 # =============================================================================
-# Tab 1: Overview
+# Tab 1: The headline (value-first, story-only)
 # =============================================================================
-with tab_overview:
-    styles.section("Headline numbers")
+with tab_headline:
+    st.markdown("### The one thing to remember")
     styles.interpretation(
-        "These are the four numbers worth quoting in any executive summary. "
-        "Everything else on this page is built from the same underlying data."
+        "If you only read one thing on this page, read this tab. The other "
+        "tabs are the evidence behind it."
     )
 
-    n_shoppers = int(result.tracks_df["track_id"].nunique()) if len(result.tracks_df) else 0
-    total_visits = int(result.footfall.sum())
-    avg_dwell = float(result.display_summary["avg_dwell_sec"].mean()) if len(result.display_summary) else 0
-    best_display = (
-        result.display_summary.loc[result.display_summary["avg_dwell_sec"].idxmax(), "display_label"]
-        if len(result.display_summary) and "display_label" in result.display_summary.columns
-        else (
-            result.display_summary.loc[result.display_summary["avg_dwell_sec"].idxmax(), "display"]
-            if len(result.display_summary) else "-"
-        )
-    )
-
-    c1, c2, c3, c4 = st.columns(4)
-    c1.metric("Different people", f"{n_shoppers}")
-    c2.metric("Total visits to areas", f"{total_visits}")
-    c3.metric("Avg time at a display", f"{avg_dwell:.1f}s")
-    c4.metric(
-        "Top display (longer stays)",
-        str(best_display).replace("_", " ").title(),
-    )
+    if winner:
+        c1, c2, c3 = st.columns(3, gap="medium")
+        with c1:
+            styles.story(
+                "We found a real signal.",
+                f"{n_shoppers} people walked through the store. That's a meaningful "
+                "sample - enough to start spotting patterns.",
+            )
+        with c2:
+            w_name, w = winner
+            l_name, l = loser
+            gap = w["engagement_rate"] * 100 - l["engagement_rate"] * 100
+            styles.story(
+                f"{w_name} is winning.",
+                f"{w_name} stopped **{w['engagement_rate']*100:.1f}%** of the "
+                f"people who walked past. {l_name} only stopped "
+                f"**{l['engagement_rate']*100:.1f}%**. A {abs(gap):.1f}-point "
+                f"gap on this small a sample is a real signal.",
+            )
+        with c3:
+            styles.story(
+                "Displays compete for seconds.",
+                f"A shopper who stops at a display stays an average of only "
+                f"**{result.display_summary['avg_dwell_sec'].mean():.1f} seconds**. "
+                "Displays have to win attention fast. This is where the "
+                "biggest design wins usually live.",
+            )
 
     st.markdown("---")
 
-    styles.section("How many people in each area")
+    # Quick visual: the store map
+    styles.section("Where the numbers came from")
     styles.interpretation(
-        "Each colored bar is one of the four store areas. Taller means "
-        "more unique visitors. A shopper who stood in the same area for "
-        "many snapshots still counts as one visitor."
+        "The colored boxes on the floor are the six areas the system counts. "
+        "Each color is one area; the boxes for the two displays are inside "
+        "the center band."
     )
 
-    left, right = st.columns([1, 1.2], gap="large")
-    with left:
-        zone_ref_path = ASSETS / "zone_reference.jpg"
-        if zone_ref_path.exists():
-            st.image(str(zone_ref_path), use_container_width=True)
+    col_map, col_text = st.columns([1.2, 1], gap="large")
+    with col_map:
+        zref = ASSETS / "zone_reference.jpg"
+        if zref.exists():
+            st.image(str(zref), use_container_width=True)
 
-    with right:
-        chart_kind = st.radio(
-            "Chart type",
-            ["Bar", "Donut"],
-            horizontal=True,
-            label_visibility="collapsed",
+    with col_text:
+        styles.section("What each color means")
+        st.markdown(
+            """
+- **Orange (Entrance)** - where people come in
+- **Cyan (Center)** - the main walkway
+- **Red (Storefronts)** - where people browse
+- **Purple (Checkout)** - where they pay
+- **Green (Display A)** - product display on the left
+- **Pink (Display B)** - product display on the right
+            """
         )
-        footfall_df = result.footfall.reset_index()
-        footfall_df.columns = ["area", "unique_visitors"]
-        footfall_df = footfall_df[footfall_df["unique_visitors"] > 0]
-
-        if chart_kind == "Bar":
-            fig = px.bar(
-                footfall_df, x="area", y="unique_visitors",
-                color="area", color_discrete_map=AREA_COLORS,
-                text="unique_visitors",
-            )
-            fig.update_traces(textposition="outside")
-            fig.update_layout(
-                showlegend=False, height=380,
-                plot_bgcolor="white", paper_bgcolor="white",
-                xaxis_title=None, yaxis_title="Unique visitors",
-                yaxis=dict(gridcolor="#e2e8f0"),
-                margin=dict(l=10, r=10, t=20, b=10),
-            )
-        else:
-            fig = px.pie(
-                footfall_df, names="area", values="unique_visitors",
-                color="area", color_discrete_map=AREA_COLORS,
-                hole=0.55,
-            )
-            fig.update_traces(textposition="inside", textinfo="percent+label")
-            fig.update_layout(
-                showlegend=True, height=380,
-                plot_bgcolor="white", paper_bgcolor="white",
-                margin=dict(l=10, r=10, t=20, b=10),
-                legend=dict(orientation="h", yanchor="bottom", y=-0.15),
-            )
-        st.plotly_chart(fig, use_container_width=True)
+        st.markdown("")
+        st.page_link("pages/2_Browse_the_Video.py", label="See it work in the video", icon="2")
 
 
 # =============================================================================
-# Tab 2: Where People Went
+# Tab 2: Where People Went (the traffic story)
 # =============================================================================
 with tab_journey:
-    styles.section("How many people in each area")
-    styles.interpretation(
-        "Same data as the bar chart on the Overview tab. Use the filter to "
-        "focus on a subset of areas."
+    # Story headline
+    busiest_area = result.footfall.idxmax() if len(result.footfall) else "?"
+    quietest_area = result.footfall.idxmin() if len(result.footfall) else "?"
+    styles.story(
+        f"The {busiest_area.replace('_', ' ').title()} is doing the heavy lifting.",
+        f"Most shoppers pass through it on their way somewhere else. The "
+        f"{quietest_area.replace('_', ' ').title()} sees the least traffic - "
+        f"either it's a destination only some shoppers reach, or it's "
+        f"underused.",
     )
 
-    all_zones = result.footfall.index.tolist()
-    selected_zones = st.multiselect(
-        "Areas to show",
-        options=all_zones,
-        default=all_zones,
-        help="Uncheck an area to hide it from both the bar chart and the "
-             "movement grid below.",
-        format_func=lambda z: z.replace("_", " ").title(),
-    )
-    if not selected_zones:
-        st.warning("Pick at least one area.")
-        st.stop()
+    st.markdown("")
 
-    ff = result.footfall.reset_index()
-    ff.columns = ["area", "unique_visitors"]
-    ff = ff[ff["area"].isin(selected_zones)]
+    col_a, col_b = st.columns(2, gap="large")
 
-    c_bar, c_kpi = st.columns([3, 1])
-    with c_bar:
+    with col_a:
+        styles.section("How many people visited each area")
+        styles.interpretation(
+            "Tall bars = busy areas. Use the multiselect to hide an area "
+            "and re-focus the chart."
+        )
+
+        all_zones = result.footfall.index.tolist()
+        selected_zones = st.multiselect(
+            "Areas to show",
+            options=all_zones,
+            default=all_zones,
+            format_func=lambda z: z.replace("_", " ").title(),
+            label_visibility="collapsed",
+        )
+        if not selected_zones:
+            st.warning("Pick at least one area.")
+            st.stop()
+
+        ff = result.footfall.reset_index()
+        ff.columns = ["area", "visitors"]
+        ff = ff[ff["area"].isin(selected_zones)].sort_values("visitors", ascending=False)
+
         fig = px.bar(
-            ff, x="area", y="unique_visitors",
+            ff, x="area", y="visitors",
             color="area", color_discrete_map=AREA_COLORS,
-            text="unique_visitors",
+            text="visitors",
         )
         fig.update_traces(textposition="outside")
         fig.update_layout(
-            showlegend=False, height=300,
+            showlegend=False, height=380,
             plot_bgcolor="white", paper_bgcolor="white",
             xaxis_title=None, yaxis_title="Unique visitors",
             yaxis=dict(gridcolor="#e2e8f0"),
             margin=dict(l=10, r=10, t=20, b=10),
         )
         st.plotly_chart(fig, use_container_width=True)
-    with c_kpi:
-        st.metric("Areas shown", f"{len(selected_zones)}")
-        st.metric("Total visitors", f"{int(ff['unique_visitors'].sum())}")
-        st.metric(
-            "Busiest area",
-            ff.loc[ff["unique_visitors"].idxmax(), "area"].title() if len(ff) else "-",
+
+    with col_b:
+        styles.section("What's the story behind the numbers?")
+        styles.interpretation(
+            "Read each bar as a place in the store. The story is in the "
+            "shape - where do people go first, and where do they drop off?"
         )
+        # Plain-language takeaway cards
+        total = int(ff["visitors"].sum())
+        if len(ff):
+            top = ff.iloc[0]
+            bot = ff.iloc[-1]
+            ratio = (top["visitors"] / bot["visitors"]) if bot["visitors"] > 0 else 0
+            st.markdown(
+                f"""
+- The busiest area is **{top['area'].replace('_', ' ').title()}** with
+  **{int(top['visitors'])}** visitors - the main walkway or first stop.
+- The least-visited area is **{bot['area'].replace('_', ' ').title()}** with
+  **{int(bot['visitors'])}** - probably a destination, not a pass-through.
+- That's about a **{ratio:.1f}x** difference, which is normal for a store
+  where some areas are destinations and others are connectors.
+                """
+            )
 
     st.markdown("---")
 
+    # Movements
     styles.section("How people moved between areas")
     styles.interpretation(
-        "Each row is an area someone started in. Each column is the area "
-        "they went to next. Bigger numbers mean that path was taken more "
-        "often. Hover any cell for the exact count."
+        "Each row is where someone started; each column is where they went "
+        "next. Hot cells = common journeys. This is the same view a "
+        "store-planner would draw on paper, but with real data."
     )
 
     trans = result.transitions.copy()
@@ -274,8 +296,7 @@ with tab_journey:
 
     fig = go.Figure(data=go.Heatmap(
         z=trans.values,
-        x=zone_names,
-        y=zone_names,
+        x=zone_names, y=zone_names,
         colorscale=[[0, "#f8fafc"], [1, "#1e3a8a"]],
         text=trans.values,
         texttemplate="%{text}",
@@ -294,14 +315,7 @@ with tab_journey:
     )
     st.plotly_chart(fig, use_container_width=True)
 
-    st.markdown("---")
-
-    styles.section("Most common paths")
-    styles.interpretation(
-        "The three paths shoppers took most often. Read straight off the "
-        "grid above."
-    )
-
+    # Top journeys as cards
     pairs = []
     for i, a in enumerate(zone_names):
         for j, b in enumerate(zone_names):
@@ -311,29 +325,45 @@ with tab_journey:
     top3 = pairs[:3]
 
     if top3:
-        cards = st.columns(len(top3))
-        for col, (a, b, n) in zip(cards, top3):
+        st.markdown("##### The three most common journeys")
+        cols = st.columns(len(top3))
+        for col, (a, b, n) in zip(cols, top3):
             with col:
-                st.metric(
-                    label=f"{a} -> {b}",
-                    value=f"{n} trips",
-                    help=f"Number of times a shopper moved from {a} to {b}",
-                )
-    else:
-        st.info("No movements between the selected areas.")
+                with st.container(border=True):
+                    st.markdown(f"**{a} -> {b}**")
+                    st.markdown(f"### {n} trips")
+                    st.caption(
+                        f"About {n} shoppers in this sample took this path. "
+                        "If this number is high, the two areas are linked "
+                        "in shoppers' minds."
+                    )
 
 
 # =============================================================================
-# Tab 3: Did Displays Work
+# Tab 3: Did Displays Work (the display story)
 # =============================================================================
 with tab_engagement:
-    styles.section("How the displays did")
+    # Headline story
+    if winner:
+        w_name, w = winner
+        l_name, l = loser
+        w_share = w["engagement_rate"] * 100
+        l_share = l["engagement_rate"] * 100
+        styles.story(
+            f"{w_name} is the stronger display.",
+            f"Out of every 100 people who walked past, about {w_share:.0f} "
+            f"stopped at {w_name}. Only {l_share:.0f} stopped at {l_name}. "
+            f"On a small sample, a {w_share - l_share:.1f}-point gap is a real "
+            "signal you can act on.",
+        )
+
+    st.markdown("")
+
+    styles.section("Pick the displays to compare")
     styles.interpretation(
-        "Pick one or both displays. **People who walked by** is the total "
-        "of every unique person the system spotted in the footage. "
-        "**Share who stopped** is the fraction of those people who stepped "
-        "into the display's colored rectangle. **Time spent** is how long "
-        "they stayed once they were inside."
+        "Use the multiselect to compare one display against itself over time, "
+        "or both side-by-side. Each bar shows what share of people who "
+        "walked past actually stepped inside the display."
     )
 
     ds = result.display_summary.copy()
@@ -341,51 +371,48 @@ with tab_engagement:
     ds["display_label"] = ds["display"].str.replace("_", " ").str.title()
 
     display_choice = st.multiselect(
-        "Displays to compare",
+        "Displays",
         options=ds["display_label"].tolist(),
         default=ds["display_label"].tolist(),
-        help="Uncheck a display to hide it. At least one must be selected.",
+        label_visibility="collapsed",
     )
     if not display_choice:
         st.warning("Pick at least one display.")
         st.stop()
-    ds_filtered = ds[ds["display_label"].isin(display_choice)]
-
-    color_map_label = {"Display A": "#22c55e", "Display B": "#ec4899"}
+    ds_f = ds[ds["display_label"].isin(display_choice)]
+    color_map = {"Display A": "#22c55e", "Display B": "#ec4899"}
 
     c1, c2 = st.columns(2, gap="large")
-
     with c1:
         styles.section("Share who stopped")
         styles.interpretation(
-            "Out of everyone who walked past the display, what fraction "
-            "actually stepped inside. Higher = more pull."
+            "Of every 100 people who walked past, how many stepped inside."
         )
         fig = px.bar(
-            ds_filtered, x="display_label", y="share_pct",
-            color="display_label", color_discrete_map=color_map_label,
-            text=ds_filtered["share_pct"],
+            ds_f, x="display_label", y="share_pct",
+            color="display_label", color_discrete_map=color_map,
+            text=ds_f["share_pct"],
         )
         fig.update_traces(textposition="outside", texttemplate="%{text}%")
         fig.update_layout(
             showlegend=False, height=360,
             plot_bgcolor="white", paper_bgcolor="white",
-            xaxis_title=None, yaxis_title="Share of people who walked by",
-            yaxis=dict(gridcolor="#e2e8f0"),
+            xaxis_title=None, yaxis_title="Share who stopped",
+            yaxis=dict(gridcolor="#e2e8f0", range=[0, max(ds_f["share_pct"]) * 1.25]),
             margin=dict(l=10, r=10, t=20, b=10),
         )
         st.plotly_chart(fig, use_container_width=True)
 
     with c2:
-        styles.section("Average time spent")
+        styles.section("Time spent once inside")
         styles.interpretation(
-            "Once a shopper stepped inside the display, how long did they "
-            "stay on average. Higher = the display holds attention."
+            "Once someone stepped inside, how long did they stay. Longer = "
+            "the display is holding attention."
         )
         fig = px.bar(
-            ds_filtered, x="display_label", y="avg_dwell_sec",
-            color="display_label", color_discrete_map=color_map_label,
-            text=ds_filtered["avg_dwell_sec"].round(1),
+            ds_f, x="display_label", y="avg_dwell_sec",
+            color="display_label", color_discrete_map=color_map,
+            text=ds_f["avg_dwell_sec"].round(1),
         )
         fig.update_traces(textposition="outside", texttemplate="%{text}s")
         fig.update_layout(
@@ -399,44 +426,24 @@ with tab_engagement:
 
     if len(display_choice) == 2:
         st.markdown("---")
-        styles.section("Side-by-side")
+        styles.section("Head-to-head verdict")
         styles.interpretation(
-            "Normalized comparison. Each bar shows the value as a share of "
-            "the better-performing display for that metric, so the winner "
-            "is obvious at a glance."
+            "If you had to pick one display to put your best product in, "
+            "here is the case."
         )
-        norm = ds.set_index("display_label")[["share_pct", "avg_dwell_sec"]].copy()
-        for col in norm.columns:
-            mx = norm[col].max()
-            if mx > 0:
-                norm[col] = (norm[col] / mx * 100).round(1)
-        norm = norm.reset_index().melt(
-            id_vars="display_label", var_name="metric", value_name="share_pct"
+        w_name, w = winner
+        l_name, l = loser
+        verdict = (
+            f"**{w_name}** pulls **{w['engagement_rate']*100:.1f}%** of passers "
+            f"and keeps them **{w['avg_dwell_sec']:.1f}s** on average. "
+            f"**{l_name}** pulls **{l['engagement_rate']*100:.1f}%** "
+            f"and keeps them **{l['avg_dwell_sec']:.1f}s**. "
+            f"**{w_name}** wins on stopping power; the time-spent numbers are close."
         )
-        metric_labels = {"share_pct": "Share who stopped", "avg_dwell_sec": "Avg time spent"}
-        norm["metric"] = norm["metric"].map(metric_labels)
-        fig = px.bar(
-            norm, x="metric", y="share_pct", color="display_label",
-            barmode="group", text="share_pct",
-            color_discrete_map=color_map_label,
-        )
-        fig.update_traces(textposition="outside", texttemplate="%{text:.0f}%")
-        fig.update_layout(
-            height=340, plot_bgcolor="white", paper_bgcolor="white",
-            xaxis_title=None, yaxis_title="Share of best (%)",
-            yaxis=dict(gridcolor="#e2e8f0", range=[0, 115]),
-            legend_title="",
-            margin=dict(l=10, r=10, t=20, b=10),
-        )
-        st.plotly_chart(fig, use_container_width=True)
+        styles.story("The verdict.", verdict)
 
     st.markdown("---")
-
-    styles.section("Full display numbers")
-    styles.interpretation(
-        "All the numbers behind the charts above. 'People who walked by' is "
-        "the same for both displays, so the rates are directly comparable."
-    )
+    styles.section("Full numbers, for reference")
     display_df = ds[[
         "display_label", "passers", "zone_entries",
         "share_pct", "avg_dwell_sec", "max_dwell_sec",
@@ -459,15 +466,13 @@ with tab_engagement:
 
 
 # =============================================================================
-# Tab 4: Numbers & Downloads
+# Tab 4: The numbers (for the data team)
 # =============================================================================
 with tab_data:
     styles.section("Per-person summary")
     styles.interpretation(
-        "Top N longest-tracked people. **Snapshots seen** is how many of "
-        "the 200 frames the system spotted this person in. **Seconds seen** "
-        "is that number converted to wall time using the 1.5 snapshots/sec "
-        "rate."
+        "Top N people the system spotted most often. Useful for verifying "
+        "the system isn't double-counting anyone."
     )
 
     track_lengths = (
@@ -490,52 +495,24 @@ with tab_data:
 
     st.markdown("---")
 
-    styles.section("How long are people usually in the footage?")
-    styles.interpretation(
-        "Most shoppers appear in only a handful of snapshots - they walk "
-        "through quickly. A long tail stay longer."
-    )
-    fig = px.histogram(
-        track_lengths, x="snapshots_seen", nbins=20,
-        color_discrete_sequence=["#3b82f6"],
-    )
-    fig.update_layout(
-        height=280, plot_bgcolor="white", paper_bgcolor="white",
-        xaxis_title="Snapshots seen",
-        yaxis_title="Number of people",
-        showlegend=False,
-        yaxis=dict(gridcolor="#e2e8f0"),
-        xaxis=dict(gridcolor="#e2e8f0"),
-        margin=dict(l=10, r=10, t=20, b=10),
-    )
-    st.plotly_chart(fig, use_container_width=True)
-
-    st.markdown("---")
-
     styles.section("Download the numbers")
     styles.interpretation(
-        "All raw outputs as CSV. Drop these into Excel or a slide deck."
+        "CSV files for your data team or for slides."
     )
 
     d1, d2, d3 = st.columns(3)
     d1.download_button(
         "Trajectories CSV",
         data=result.tracks_df.to_csv(index=False).encode("utf-8"),
-        mime="text/csv",
-        use_container_width=True,
-        help="One row per person per snapshot. Use to build your own analysis.",
+        mime="text/csv", use_container_width=True,
     )
     d2.download_button(
         "Trips between areas CSV",
         data=result.transitions.to_csv().encode("utf-8"),
-        mime="text/csv",
-        use_container_width=True,
-        help="Counts of how people moved between areas.",
+        mime="text/csv", use_container_width=True,
     )
     d3.download_button(
         "Display numbers CSV",
         data=result.display_summary.to_csv(index=False).encode("utf-8"),
-        mime="text/csv",
-        use_container_width=True,
-        help="Per-display summary.",
+        mime="text/csv", use_container_width=True,
     )
