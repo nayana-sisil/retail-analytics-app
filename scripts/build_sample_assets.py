@@ -113,65 +113,110 @@ def render_annotated_video(
     for idx, fname in enumerate(frame_files):
         img = cv2.imread(os.path.join(frame_dir, fname))
         # Draw zones first (under detections)
-        for name, poly in {**result.journey_zones, **result.display_zones}.items():
-            pts = np.array(list(poly.exterior.coords), dtype=np.int32)
-            color = pipeline.ZONE_COLORS[name]
-            overlay = img.copy()
-            cv2.fillPoly(overlay, [pts], color)
-            cv2.addWeighted(overlay, 0.15, img, 0.85, 0, img)
-            cv2.polylines(img, [pts], True, color, 2)
-            x, y = pts[0]
-            cv2.putText(img, name, (int(x) + 6, int(y) + 18),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.55, color, 2)
+        draw_zones(img, {**result.journey_zones, **result.display_zones},
+                   fill_alpha=0.15, border_thickness=3)
 
-        # Draw detections
-        for _, row in by_frame.get(idx, pd.DataFrame()).iterrows():
-            x1, y1, x2, y2 = int(row.x1), int(row.y1), int(row.x2), int(row.y2)
-            cv2.rectangle(img, (x1, y1), (x2, y2), (0, 255, 0), 2)
-            label = f"#{int(row.track_id)} {row.conf:.2f}"
-            cv2.putText(img, label, (x1, max(y1 - 6, 12)),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.45, (0, 255, 0), 1)
+        # Draw detections (top-N by confidence to avoid clutter)
+        draw_detections(img, by_frame.get(idx, pd.DataFrame()), max_show=12)
 
-        # Header text
-        cv2.putText(img, f"frame {idx}/{result.n_frames_processed-1}",
-                    (10, H - 12), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 2)
-        cv2.putText(img, f"frame {idx}/{result.n_frames_processed-1}",
-                    (10, H - 12), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 0), 1)
+        # Time stamp bottom-left, on a filled background for readability
+        stamp = f"{idx / result.fps:.1f}s"
+        (tw, th), _ = cv2.getTextSize(stamp, cv2.FONT_HERSHEY_SIMPLEX, 0.7, 2)
+        cv2.rectangle(img, (6, H - th - 14), (6 + tw + 12, H - 4), (0, 0, 0), -1)
+        cv2.putText(img, stamp, (12, H - 8),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2, cv2.LINE_AA)
 
         vw.write(img)
     vw.release()
     print(f"[render] wrote {out_path}")
 
 
+def draw_zones(img, zones, *, fill_alpha=0.18, border_thickness=3, label=True):
+    """Draw zones with translucent fill, thick border, and a clear label tag."""
+    for name, poly in zones.items():
+        pts = np.array(list(poly.exterior.coords), dtype=np.int32)
+        color = pipeline.ZONE_COLORS[name]
+        # Translucent fill
+        overlay = img.copy()
+        cv2.fillPoly(overlay, [pts], color)
+        cv2.addWeighted(overlay, fill_alpha, img, 1 - fill_alpha, 0, img)
+        # Thick border
+        cv2.polylines(img, [pts], True, color, border_thickness)
+        if label:
+            x, y = pts[0]
+            label_text = name.replace("_", " ").title()
+            # Filled background tag for readability
+            (tw, th), _ = cv2.getTextSize(label_text, cv2.FONT_HERSHEY_SIMPLEX, 0.55, 2)
+            tag_x1, tag_y1 = int(x) + 4, int(y) + 4
+            tag_x2, tag_y2 = tag_x1 + tw + 10, tag_y1 + th + 8
+            cv2.rectangle(img, (tag_x1, tag_y1), (tag_x2, tag_y2), color, -1)
+            cv2.putText(img, label_text, (tag_x1 + 5, tag_y2 - 5),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.55, (255, 255, 255), 2, cv2.LINE_AA)
+
+
+def draw_detections(img, rows, *, max_show=12, box_color=(0, 200, 80),
+                     box_thickness=3, label_font_scale=0.7, label_thickness=2):
+    """Draw bounding boxes + filled ID tags. Limits to top-N by confidence."""
+    if len(rows) == 0:
+        return
+    # Sort by confidence (desc) and keep top N to avoid clutter
+    rows = rows.sort_values("conf", ascending=False).head(max_show)
+    for _, row in rows.iterrows():
+        x1, y1, x2, y2 = int(row.x1), int(row.y1), int(row.x2), int(row.y2)
+        # Bounding box
+        cv2.rectangle(img, (x1, y1), (x2, y2), box_color, box_thickness)
+        # Filled tag with the person number, anchored above the box
+        tag_text = f"#{int(row.track_id)}"
+        (tw, th), _ = cv2.getTextSize(tag_text, cv2.FONT_HERSHEY_SIMPLEX,
+                                      label_font_scale, label_thickness)
+        tag_x1 = x1
+        tag_y1 = max(y1 - th - 12, 4)
+        tag_x2 = tag_x1 + tw + 14
+        tag_y2 = tag_y1 + th + 10
+        cv2.rectangle(img, (tag_x1, tag_y1), (tag_x2, tag_y2), box_color, -1)
+        cv2.putText(img, tag_text, (tag_x1 + 7, tag_y2 - 5),
+                    cv2.FONT_HERSHEY_SIMPLEX, label_font_scale, (255, 255, 255),
+                    label_thickness, cv2.LINE_AA)
+
+
 def write_best_frame(result: pipeline.PipelineResult, frame_dir: str, out_path: str):
-    """Pick the frame with the most tracks, save it annotated as a static image."""
+    """Save two hero images: a clean zone-only version, and an annotated
+    version. Picks a frame with a moderate number of people (5-10) so the
+    annotations are readable, not a wall of overlapping boxes."""
     tracks = result.tracks_df
     if not len(tracks):
         return
-    counts = tracks.groupby("frame").size()
-    best_idx = int(counts.idxmax())
+
+    # Pick a frame with 5-10 people for clarity (not the busiest one)
+    per_frame = tracks.groupby("frame").agg(
+        n_people=("track_id", "nunique"),
+        n_detections=("track_id", "size"),
+    ).reset_index()
+    candidates = per_frame[(per_frame["n_people"] >= 4) & (per_frame["n_people"] <= 10)]
+    if len(candidates):
+        best_idx = int(candidates.iloc[len(candidates) // 2]["frame"])
+    else:
+        best_idx = int(per_frame.sort_values("n_people").iloc[len(per_frame) // 2]["frame"])
+
     frame_files = sorted([f for f in os.listdir(frame_dir) if f.endswith(".jpg")])
     img = cv2.imread(os.path.join(frame_dir, frame_files[best_idx]))
 
-    for name, poly in {**result.journey_zones, **result.display_zones}.items():
-        pts = np.array(list(poly.exterior.coords), dtype=np.int32)
-        color = pipeline.ZONE_COLORS[name]
-        overlay = img.copy()
-        cv2.fillPoly(overlay, [pts], color)
-        cv2.addWeighted(overlay, 0.15, img, 0.85, 0, img)
-        cv2.polylines(img, [pts], True, color, 2)
-        x, y = pts[0]
-        cv2.putText(img, name, (int(x) + 6, int(y) + 18),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.55, color, 2)
+    # ---- Clean version (zones only, no person boxes) ----
+    clean = img.copy()
+    draw_zones(clean, {**result.journey_zones, **result.display_zones},
+               fill_alpha=0.22, border_thickness=3)
+    cv2.imwrite(out_path, clean)
+    n_people = per_frame[per_frame["frame"] == best_idx]["n_people"].iloc[0]
+    print(f"[best] saved {out_path} (frame {best_idx}, {n_people} people, zones only)")
 
-    for _, row in tracks[tracks["frame"] == best_idx].iterrows():
-        x1, y1, x2, y2 = int(row.x1), int(row.y1), int(row.x2), int(row.y2)
-        cv2.rectangle(img, (x1, y1), (x2, y2), (0, 255, 0), 2)
-        cv2.putText(img, f"#{int(row.track_id)}", (x1, max(y1 - 6, 12)),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.45, (0, 255, 0), 1)
-
-    cv2.imwrite(out_path, img)
-    print(f"[best] saved {out_path} (frame {best_idx}, {counts.iloc[0]} detections)")
+    # ---- Annotated version (zones + boxes + ID tags) ----
+    annotated = img.copy()
+    draw_zones(annotated, {**result.journey_zones, **result.display_zones},
+               fill_alpha=0.15, border_thickness=3)
+    rows = tracks[tracks["frame"] == best_idx]
+    draw_detections(annotated, rows, max_show=10)
+    cv2.imwrite(str(out_path).replace("best_frame.jpg", "best_frame_annotated.jpg"), annotated)
+    print(f"[best] saved annotated version (frame {best_idx}, {n_people} people)")
 
 
 # -----------------------------------------------------------------------------

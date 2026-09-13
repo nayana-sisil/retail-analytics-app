@@ -5,9 +5,9 @@ A public-facing demo of a computer-vision pipeline that turns retail video
 into shopper journey + display engagement analytics.
 
 Use the sidebar to navigate:
-  - Results Dashboard  (instant, cached analytics)
-  - Live Demo          (annotated video + per-frame chart)
-  - Methodology        (assumptions, pipeline, limitations)
+  - Where People Went        (instant, cached analytics)
+  - Browse the Video        (annotated video + per-moment chart)
+  - How It Works             (FAQ, plain language)
 """
 
 import json
@@ -42,17 +42,17 @@ with st.sidebar:
     st.markdown("## Retail Analytics")
     st.caption("Computer-vision POC")
     st.markdown("---")
-    st.markdown("## Navigate")
+    st.markdown("## Pages")
     st.markdown(
         """
-- [Results Dashboard](/Results_Dashboard) &mdash; KPIs, charts, downloads
-- [Live Demo](/Live_Demo) &mdash; annotated video playback
-- [Methodology](/Methodology) &mdash; assumptions & limitations
+- [Where People Went](/Where_People_Went) &mdash; numbers + charts
+- [Browse the Video](/Browse_the_Video) &mdash; annotated playback
+- [How It Works](/How_It_Works) &mdash; FAQ
         """
     )
     st.markdown("---")
     st.markdown("## Sample data")
-    st.caption("Mall dataset, 200 frames @ 1.5 fps")
+    st.caption("Mall footage, 200 snapshots, ~2 minutes")
 
 
 # -----------------------------------------------------------------------------
@@ -67,54 +67,62 @@ def load_sample_results():
         return pipeline.result_from_jsonable(json.load(f))
 
 
-@st.cache_resource
-def load_model():
-    """YOLO11n - small enough for free-tier CPU. Loaded once per session."""
-    try:
-        from ultralytics import YOLO
-        return YOLO("yolo11n.pt")
-    except Exception:
-        return None
-
-
 # -----------------------------------------------------------------------------
 # Hero
 # -----------------------------------------------------------------------------
 styles.hero(
     "Retail Video Analytics",
-    "Turn store video into shopper journey and display engagement insights."
+    "Turn ordinary store cameras into shopper insights anyone can read.",
 )
+
+
+# -----------------------------------------------------------------------------
+# First-time explainer
+# -----------------------------------------------------------------------------
+with st.expander("First time here? What am I looking at?", expanded=False):
+    st.markdown(
+        """
+This is a working demo built on a real store video. The system watches the
+footage and answers two simple business questions:
+
+1. **Where do shoppers go?** We drew colored boxes on the floor of the store
+   to mark areas (entrance, center, storefronts, checkout). The system counts
+   who visited each area.
+
+2. **Do displays work?** Two boxes marked **Display A** and **Display B**
+   mark the product displays. We track how many people stopped there and
+   for how long.
+
+The numbers on the next pages are real &mdash; computed from a 200-snapshot
+sample of mall footage. Use the sidebar to navigate.
+        """
+    )
 
 
 # -----------------------------------------------------------------------------
 # About
 # -----------------------------------------------------------------------------
 with st.container(border=True):
-    st.markdown("### What this is")
+    st.markdown("### What this is, in one paragraph")
     st.markdown(
         """
-A pretrained **YOLO11n** person detector paired with **ByteTrack** tracking
-converts store video into persistent shopper trajectories. Those trajectories
-are mapped to spatial zones and turned into two kinds of business analytics:
-
-- **Customer journey** - where shoppers go, in what order, how often.
-- **Display engagement** - who stops, who walks past, how long they stay.
-
-The full pipeline (detect &rarr; track &rarr; zone &rarr; analyze &rarr; visualize)
-lives in `pipeline.py`. The original notebook this was refactored from is
-in the repository.
-"""
+Every retail floor already has cameras. This demo turns that footage into
+the kind of structured data you might be used to from your website:
+**who came, where they went, what they did, and where they dropped off.**
+No one watches hours of tape &mdash; the system reads the footage and gives
+you the numbers.
+        """
     )
 
     st.markdown("### Where to start")
     st.markdown(
         """
-1. Open the **Results Dashboard** to see the analytics on the bundled sample
-   video. Numbers are computed at build time, so the page loads instantly.
-2. Open the **Live Demo** to scrub through the annotated video and see what
-   the detector found in each frame.
-3. Open the **Methodology** page to read about assumptions, the pipeline,
-   and the limitations of this POC.
+1. Open **Where People Went** to see the analytics on the sample video.
+   Numbers load instantly &mdash; they were calculated at build time.
+2. Open **Browse the Video** to scrub through the footage yourself and see
+   what the system is tracking in each moment.
+3. Open **How It Works** if you want the FAQ &mdash; what's happening,
+   how accurate it is, and what's next.
         """
     )
 
@@ -127,31 +135,36 @@ if result is not None:
     st.markdown("---")
     st.subheader("At a glance - sample video")
     styles.interpretation(
-        "Top-line numbers from the bundled 200-frame sample. Every metric on the "
-        "Results Dashboard is derived from the same underlying trajectory data."
+        "Top-line numbers from the sample. Every chart on the next page is "
+        "built from this same data."
+    )
+
+    n_shoppers = int(result.tracks_df["track_id"].nunique()) if len(result.tracks_df) else 0
+    avg_dwell = float(result.display_summary["avg_dwell_sec"].mean()) if len(result.display_summary) else 0
+    busiest = (
+        result.footfall.idxmax() if len(result.footfall) else "-"
     )
 
     c1, c2, c3, c4 = st.columns(4)
     with c1:
-        st.metric("Frames processed", f"{result.n_frames_processed:,}")
+        st.metric("Different people", f"{n_shoppers}")
     with c2:
-        n_shoppers = int(result.tracks_df["track_id"].nunique()) if len(result.tracks_df) else 0
-        st.metric("Unique shoppers", f"{n_shoppers}")
+        st.metric("Total visits to areas", f"{int(result.footfall.sum())}")
     with c3:
-        st.metric("Total zone visits", f"{int(result.footfall.sum())}")
+        st.metric("Avg time at a display", f"{avg_dwell:.1f}s")
     with c4:
-        avg_dwell = float(result.display_summary["avg_dwell_sec"].mean()) if len(result.display_summary) else 0
-        st.metric("Avg display dwell", f"{avg_dwell:.1f}s")
+        st.metric("Busiest area", busiest.title())
 
-    # Hero image: best annotated frame
+    # Hero image - the cleaner zones-only version
     best_frame_path = ASSETS / "best_frame.jpg"
     if best_frame_path.exists():
         st.markdown("---")
-        st.subheader("Annotated frame")
+        st.subheader("How we split the store into areas")
         styles.interpretation(
-            "A single frame from the sample video. Each tracked person has a "
-            "persistent ID. Colored polygons are the journey and display zones "
-            "the analytics are computed against."
+            "We drew six colored boxes on the floor: four horizontal bands "
+            "(entrance, center, storefronts, checkout) and two rectangles "
+            "(Display A, Display B). Every shopper counted above is one who "
+            "stepped into one of these boxes."
         )
         st.image(str(best_frame_path), use_container_width=True)
 else:
@@ -167,6 +180,6 @@ else:
 # -----------------------------------------------------------------------------
 st.markdown("---")
 st.caption(
-    "POC. Pretrained YOLO11n. CPU-friendly. Built with Streamlit. "
-    "Source code in the project root."
+    "POC. Plain-language demo. Built with Streamlit. Source code in the "
+    "project root."
 )
