@@ -126,8 +126,9 @@ except FileNotFoundError:
 if result is not None:
     n_shoppers = int(result.tracks_df["track_id"].nunique()) if len(result.tracks_df) else 0
     avg_dwell = float(result.display_summary["avg_dwell_sec"].mean()) if len(result.display_summary) else 0
-    display_a = next((x for x in result.display_summary if x["display"] == "display_a"), None)
-    display_b = next((x for x in result.display_summary if x["display"] == "display_b"), None)
+    ds_records = result.display_summary.to_dict("records") if len(result.display_summary) else []
+    display_a = next((x for x in ds_records if x["display"] == "display_a"), None)
+    display_b = next((x for x in ds_records if x["display"] == "display_b"), None)
 
     # Determine which display wins
     if display_a and display_b:
