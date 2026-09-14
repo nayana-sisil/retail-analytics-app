@@ -223,7 +223,7 @@ with c1:
             "Open the dashboard for the full breakdown - all areas, all "
             "movements, all displays."
         )
-        st.page_link("pages/1_Where_People_Went.py", label="Open the dashboard", icon="1")
+        st.page_link("pages/1_Where_People_Went.py", label="Open the dashboard")
 
 with c2:
     with st.container(border=True):
@@ -232,7 +232,7 @@ with c2:
             "Browse the video itself. Click through any moment and see "
             "exactly which people the system is tracking."
         )
-        st.page_link("pages/2_Browse_the_Video.py", label="Open the video", icon="2")
+        st.page_link("pages/2_Browse_the_Video.py", label="Open the video")
 
 
 st.markdown("---")
