@@ -405,12 +405,12 @@ with tab_engagement:
             "the better-performing display for that metric, so the winner "
             "is obvious at a glance."
         )
-        norm = ds.set_index("display_label")[["share_pct", "avg_dwell_sec"]].copy()
-        for col in norm.columns:
+        norm = ds[["display_label", "share_pct", "avg_dwell_sec"]].copy()
+        for col in ("share_pct", "avg_dwell_sec"):
             mx = norm[col].max()
             if mx > 0:
                 norm[col] = (norm[col] / mx * 100).round(1)
-        norm = norm.reset_index().melt(
+        norm = norm.melt(
             id_vars="display_label", var_name="metric", value_name="share_pct"
         )
         metric_labels = {"share_pct": "Share who stopped", "avg_dwell_sec": "Avg time spent"}

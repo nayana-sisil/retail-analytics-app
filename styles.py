@@ -167,8 +167,14 @@ def use_card(icon: str, question: str, what_it_does: str, value: str):
 
 
 def story(title: str, body: str):
-    """A value-style callout: 'here is what we learned and what it means'."""
+    """A value-style callout: 'here is what we learned and what it means'.
+
+    The body may use **bold** markdown; we convert it to <strong> tags
+    since the body is rendered inside HTML (not markdown).
+    """
+    import re
+    html_body = re.sub(r"\*\*(.+?)\*\*", r"<strong>\1</strong>", body)
     st.markdown(
-        f'<div class="story"><h3>{title}</h3><p>{body}</p></div>',
+        f'<div class="story"><h3>{title}</h3><p>{html_body}</p></div>',
         unsafe_allow_html=True,
     )

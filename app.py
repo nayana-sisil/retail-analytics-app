@@ -64,15 +64,14 @@ with st.container(border=True):
     st.markdown("### The big idea, in one paragraph")
     st.markdown(
         """
-Your website team has Google Analytics. Every click, every page view,
-every drop-off - measured and reported. Your physical store has the same
-amount of data on its cameras, but it's stuck inside video files no one
-ever watches.
+Every retail floor already has cameras on the ceiling. They record
+hours of footage every day, but almost none of it ever gets watched -
+it just sits on a hard drive.
 
-This system is the Google Analytics for your store. It watches the
-footage and tells you where shoppers went, which displays held their
-attention, and where they dropped off. You don't have to watch the
-video yourself - the system reads it for you.
+This system reads that footage for you. It watches the video and tells
+you where shoppers went, which displays held their attention, and where
+they dropped off. You don't have to scrub through hours of tape. The
+system does the watching and gives you the answers.
         """
     )
 

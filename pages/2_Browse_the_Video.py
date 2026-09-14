@@ -140,7 +140,19 @@ with tab_video:
         "person's ID - the same person keeps the same number as they move "
         "through the store. The colored floor boxes are the store areas."
     )
-    st.video(video_bytes)
+    # Use HTML embed to constrain the video height so it fits without scrolling.
+    # Aspect ratio of the source is 640x480 = 4:3, capped at 420px tall.
+    import base64
+    video_b64 = base64.b64encode(video_bytes).decode("ascii")
+    st.markdown(
+        f'<div style="display:flex;justify-content:center;margin:0.5rem 0 1rem 0;">'
+        f'<video controls preload="metadata" '
+        f'style="width:auto;max-width:100%;max-height:420px;border-radius:10px;'
+        f'box-shadow:0 2px 6px rgba(15,23,42,0.08);background:#000;">'
+        f'<source src="data:video/mp4;base64,{video_b64}" type="video/mp4">'
+        f'</video></div>',
+        unsafe_allow_html=True,
+    )
 
     st.markdown("---")
 
