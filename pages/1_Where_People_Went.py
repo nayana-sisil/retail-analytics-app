@@ -411,13 +411,16 @@ with tab_engagement:
             if mx > 0:
                 norm[col] = (norm[col] / mx * 100).round(1)
         norm = norm.melt(
-            id_vars="display_label", var_name="metric", value_name="share_pct"
+            id_vars="display_label",
+            var_name="metric",
+            value_vars=["share_pct", "avg_dwell_sec"],
+            value_name="score",
         )
         metric_labels = {"share_pct": "Share who stopped", "avg_dwell_sec": "Avg time spent"}
         norm["metric"] = norm["metric"].map(metric_labels)
         fig = px.bar(
-            norm, x="metric", y="share_pct", color="display_label",
-            barmode="group", text="share_pct",
+            norm, x="metric", y="score", color="display_label",
+            barmode="group", text="score",
             color_discrete_map=color_map_label,
         )
         fig.update_traces(textposition="outside", texttemplate="%{text:.0f}%")

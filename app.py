@@ -190,7 +190,9 @@ st.caption(
 
 best_frame_path = ASSETS / "best_frame.jpg"
 if best_frame_path.exists():
-    st.image(str(best_frame_path), use_container_width=True)
+    # Constrain the hero image so the page fits in one screen on a laptop.
+    # Aspect ratio of the source is 640x480, so 480px wide -> 360px tall.
+    st.image(str(best_frame_path), width=480)
 
 # Legend
 lg1, lg2, lg3, lg4, lg5, lg6 = st.columns(6)
